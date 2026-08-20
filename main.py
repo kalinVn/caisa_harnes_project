@@ -1,10 +1,21 @@
+from dotenv import load_dotenv
+
 from harness.application.entrypoints.cli.input.reader import read_input
+from harness.application.orchestration.engine.runner.runner import Runner
 from harness.application.request.model.request import Request
+from harness.intelligence.models.routing.selector.selector import (
+    create_model_client,
+)
 
 
 def main() -> None:
+    load_dotenv()
+
     print("AI Harness started.")
     print("Type 'exit' to stop.\n")
+
+    model_client = create_model_client()
+    runner = Runner(model_client=model_client)
 
     while True:
         user_message = read_input()
@@ -15,10 +26,6 @@ def main() -> None:
 
         request = Request.create(user_message)
 
-        print(f"Message: {request.message}")
-        print(f"Session ID: {request.session_id}")
-        print(f"Created at: {request.created_at}")
+        response = runner.handle(request)
 
-
-if __name__ == "__main__":
-    main()
+        print(f"\nHarness > {response}\n")

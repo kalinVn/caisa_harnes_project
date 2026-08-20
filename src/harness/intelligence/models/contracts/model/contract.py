@@ -1,6 +1,8 @@
 from typing import Protocol
 
+from harness.domain.messages.message.model import Message
+
 
 class ModelClient(Protocol):
-    def generate(self, message: str) -> str:
+    def generate(self, messages: list[Message]) -> str:
         ...
