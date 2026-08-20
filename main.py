@@ -1,16 +1,8 @@
-import sys
-from pathlib import Path
-
-
-SRC_DIR = Path(__file__).resolve().parent / "src"
-if str(SRC_DIR) not in sys.path:
-    sys.path.insert(0, str(SRC_DIR))
-
 from harness.application.entrypoints.cli.input.reader import read_input
+from harness.application.request.model.request import Request
 
 
 def main() -> None:
-    """Start the AI Harness."""
     print("AI Harness started.")
     print("Type 'exit' to stop.\n")
 
@@ -21,7 +13,11 @@ def main() -> None:
             print("AI Harness stopped.")
             break
 
-        print(f"Received: {user_message}")
+        request = Request.create(user_message)
+
+        print(f"Message: {request.message}")
+        print(f"Session ID: {request.session_id}")
+        print(f"Created at: {request.created_at}")
 
 
 if __name__ == "__main__":
