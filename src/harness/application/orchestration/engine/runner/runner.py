@@ -1,15 +1,44 @@
 from harness.application.request.model.request import Request
 from harness.domain.messages.message.model import Message
 from harness.domain.sessions.session.model import Session
-from harness.intelligence.models.contracts.model.contract import ModelClient
+from harness.intelligence.context.building.instructions.loader import (
+    CAISAPromptLoader,
+)
+from harness.intelligence.models.contracts.model.contract import (
+    ModelClient,
+)
 
 
 class Runner:
-    def __init__(self, model_client: ModelClient) -> None:
+    def __init__(
+        self,
+        model_client: ModelClient,
+    ) -> None:
         self._model_client = model_client
-        self._session = Session()
+        self._session = self._create_session()
 
-    def handle(self, request: Request) -> str:
+    def _create_session(self) -> Session:
+        session = Session()
+
+        prompt_loader = CAISAPromptLoader()
+        system_prompt = prompt_loader.load()
+        
+        if system_prompt:
+            system_message = Message(
+                role="system",
+                content=system_prompt,
+            )
+
+            session.add_message(
+                system_message
+            )
+
+        return session
+
+    def handle(
+        self,
+        request: Request,
+    ) -> str:
         if not request.message.strip():
             return "Please enter a message."
 
@@ -18,7 +47,9 @@ class Runner:
             content=request.message,
         )
 
-        self._session.add_message(user_message)
+        self._session.add_message(
+            user_message
+        )
 
         response_text = self._model_client.generate(
             self._session.messages
@@ -29,6 +60,8 @@ class Runner:
             content=response_text,
         )
 
-        self._session.add_message(assistant_message)
+        self._session.add_message(
+            assistant_message
+        )
 
         return response_text
