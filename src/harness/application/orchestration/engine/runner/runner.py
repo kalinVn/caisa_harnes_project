@@ -1,8 +1,19 @@
+from pathlib import Path
+
+from harness.application.commands.loader.loader import (
+    CommandLoader,
+)
+from harness.application.commands.parser.parser import (
+    parse_command,
+)
+from harness.application.commands.resolver.resolver import (
+    CommandResolver,
+)
 from harness.application.request.model.request import Request
 from harness.domain.messages.message.model import Message
 from harness.domain.sessions.session.model import Session
-from harness.intelligence.context.building.instructions.loader import (
-    CAISAPromptLoader,
+from harness.execution.tools.filesystem.read.tool import (
+    ReadFileTool,
 )
 from harness.intelligence.models.contracts.model.contract import (
     ModelClient,
@@ -13,27 +24,27 @@ class Runner:
     def __init__(
         self,
         model_client: ModelClient,
+        project_root: Path | None = None,
     ) -> None:
         self._model_client = model_client
-        self._session = self._create_session()
+        self._session = Session()
 
-    def _create_session(self) -> Session:
-        session = Session()
+        self._project_root = (
+            project_root or Path.cwd()
+        )
 
-        prompt_loader = CAISAPromptLoader()
-        system_prompt = prompt_loader.load()
-        
-        if system_prompt:
-            system_message = Message(
-                role="system",
-                content=system_prompt,
-            )
+        commands_directory = (
+            self._project_root
+            / ".caisa"
+            / "commands"
+        )
 
-            session.add_message(
-                system_message
-            )
+        self._command_resolver = CommandResolver(
+            commands_directory
+        )
 
-        return session
+        self._command_loader = CommandLoader()
+        self._read_file_tool = ReadFileTool()
 
     def handle(
         self,
@@ -51,6 +62,15 @@ class Runner:
             user_message
         )
 
+        parsed_command = parse_command(
+            request.message
+        )
+
+        if parsed_command is not None:
+            self._load_command_context(
+                parsed_command.name
+            )
+
         response_text = self._model_client.generate(
             self._session.messages
         )
@@ -65,3 +85,51 @@ class Runner:
         )
 
         return response_text
+
+    def _load_command_context(
+        self,
+        command_name: str,
+    ) -> None:
+        command_path = (
+            self._command_resolver.resolve(
+                command_name
+            )
+        )
+
+        content = self._read_file_tool.execute(
+            command_path
+        )
+
+        command = self._command_loader.load(
+            content
+        )
+
+        command_context = self._build_command_context(
+            command
+        )
+
+        command_message = Message(
+            role="system",
+            content=command_context,
+        )
+        
+
+        self._session.add_message(
+            command_message
+        )
+
+    def _build_command_context(
+        self,
+        command,
+    ) -> str:
+        parts = [
+            f"Executing command: {command.name}",
+            f"Description:\n{command.description}",
+        ]
+
+        for section_name, section_content in command.sections.items():
+            parts.append(
+                f"{section_name}:\n{section_content}"
+            )
+
+        return "\n\n".join(parts)

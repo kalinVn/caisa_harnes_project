@@ -3,6 +3,9 @@ from dotenv import load_dotenv
 from harness.application.entrypoints.cli.input.reader import read_input
 from harness.application.request.model.request import Request
 from harness.application.orchestration.engine.runner.runner import Runner
+from harness.intelligence.models.contracts.errors import (
+    ModelRateLimitError,
+)
 from harness.intelligence.models.routing.selector.selector import create_model_client
 
 
@@ -24,6 +27,10 @@ def main() -> None:
 
         request = Request.create(user_message)
 
-        response = runner.handle(request)
+        try:
+            response = runner.handle(request)
+        except ModelRateLimitError as error:
+            print(f"\nHarness > {error}\n")
+            continue
 
         print(f"\nHarness > {response}\n")

@@ -2,8 +2,12 @@ import os
 
 from google import genai
 from google.genai import types
+from google.genai.errors import ClientError
 
 from harness.domain.messages.message.model import Message
+from harness.intelligence.models.contracts.errors import (
+    ModelRateLimitError,
+)
 from harness.intelligence.models.providers.google.mapping.mapper import (
     map_messages,
 )
@@ -48,10 +52,20 @@ class GeminiClient:
                 system_instruction=system_instruction
             )
 
-        response = self._client.models.generate_content(
-            model=self._model,
-            contents=contents,
-            config=config,
-        )
+        try:
+            response = self._client.models.generate_content(
+                model=self._model,
+                contents=contents,
+                config=config,
+            )
+        except ClientError as error:
+            if error.code != 429:
+                raise
+
+            raise ModelRateLimitError(
+                "Gemini request quota exceeded. "
+                "Wait for the cooldown shown by Gemini, then retry, "
+                "or increase the API project's quota/billing."
+            ) from error
 
         return response.text or ""
