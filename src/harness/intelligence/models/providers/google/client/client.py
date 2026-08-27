@@ -8,6 +8,12 @@ from harness.domain.messages.message.model import Message
 from harness.intelligence.models.contracts.errors import (
     ModelRateLimitError,
 )
+from harness.intelligence.models.contracts.response.model import (
+    ModelResponse,
+)
+from harness.intelligence.models.parsing.tool_calls.parser import (
+    parse_tool_calls,
+)
 from harness.intelligence.models.providers.google.mapping.mapper import (
     map_messages,
 )
@@ -34,8 +40,7 @@ class GeminiClient:
     def generate(
         self,
         messages: list[Message],
-    ) -> str:
-
+    ) -> ModelResponse:
         contents, system_instruction = map_messages(
             messages
         )
@@ -68,4 +73,13 @@ class GeminiClient:
                 "or increase the API project's quota/billing."
             ) from error
 
-        return response.text or ""
+        response_text = response.text or ""
+
+        tool_calls = parse_tool_calls(
+            response_text
+        )
+
+        return ModelResponse(
+            text=response_text,
+            tool_calls=tool_calls,
+        )

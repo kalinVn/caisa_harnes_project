@@ -10,10 +10,17 @@ from harness.application.commands.resolver.resolver import (
     CommandResolver,
 )
 from harness.application.request.model.request import Request
+from harness.domain.commands.model import Command
 from harness.domain.messages.message.model import Message
 from harness.domain.sessions.session.model import Session
-from harness.execution.tools.filesystem.read.tool import (
-    ReadFileTool,
+from harness.execution.tools.registry.registry import (
+    ToolRegistry,
+)
+from harness.execution.tools.registry.registration.registry import (
+    register_tools,
+)
+from harness.execution.tools.registry.schemas.schema import (
+    build_tools_schema,
 )
 from harness.intelligence.models.contracts.model.contract import (
     ModelClient,
@@ -44,7 +51,14 @@ class Runner:
         )
 
         self._command_loader = CommandLoader()
-        self._read_file_tool = ReadFileTool()
+
+        self._tool_registry = ToolRegistry()
+
+        register_tools(
+            self._tool_registry
+        )
+
+        self._load_tools_context()
 
     def handle(
         self,
@@ -71,20 +85,53 @@ class Runner:
                 parsed_command.name
             )
 
-        response_text = self._model_client.generate(
+        response = self._model_client.generate(
             self._session.messages
         )
 
+        if response.tool_calls:
+            tool_results: list[str] = []
+
+            for tool_call in response.tool_calls:
+                result = self._tool_registry.execute(
+                    tool_call.name,
+                    tool_call.arguments,
+                )
+
+                tool_results.append(
+                    f"{tool_call.name}: {result}"
+                )
+
+            return "\n".join(tool_results)
+
         assistant_message = Message(
             role="assistant",
-            content=response_text,
+            content=response.text,
         )
 
         self._session.add_message(
             assistant_message
         )
 
-        return response_text
+        return response.text
+
+    def _load_tools_context(
+        self,
+    ) -> None:
+        tools = self._tool_registry.list_tools()
+
+        tools_schema = build_tools_schema(
+            tools
+        )
+
+        tools_message = Message(
+            role="system",
+            content=tools_schema,
+        )
+
+        self._session.add_message(
+            tools_message
+        )
 
     def _load_command_context(
         self,
@@ -96,23 +143,27 @@ class Runner:
             )
         )
 
-        content = self._read_file_tool.execute(
-            command_path
+        content = self._tool_registry.execute(
+            "read_file",
+            {
+                "path": str(command_path),
+            },
         )
 
         command = self._command_loader.load(
             content
         )
 
-        command_context = self._build_command_context(
-            command
+        command_context = (
+            self._build_command_context(
+                command
+            )
         )
 
         command_message = Message(
             role="system",
             content=command_context,
         )
-        
 
         self._session.add_message(
             command_message
@@ -120,16 +171,19 @@ class Runner:
 
     def _build_command_context(
         self,
-        command,
+        command: Command,
     ) -> str:
         parts = [
             f"Executing command: {command.name}",
             f"Description:\n{command.description}",
         ]
 
-        for section_name, section_content in command.sections.items():
+        for section_name, section_content in (
+            command.sections.items()
+        ):
             parts.append(
-                f"{section_name}:\n{section_content}"
+                f"{section_name}:\n"
+                f"{section_content}"
             )
 
         return "\n\n".join(parts)
