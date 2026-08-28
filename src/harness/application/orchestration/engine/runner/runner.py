@@ -9,18 +9,17 @@ from harness.application.commands.parser.parser import (
 from harness.application.commands.resolver.resolver import (
     CommandResolver,
 )
+from harness.application.orchestration.sessions.manager.manager import (
+    SessionManager,
+)
 from harness.application.request.model.request import Request
 from harness.domain.commands.model import Command
 from harness.domain.messages.message.model import Message
-from harness.domain.sessions.session.model import Session
 from harness.execution.tools.registry.registry import (
     ToolRegistry,
 )
 from harness.execution.tools.registry.registration.registry import (
     register_tools,
-)
-from harness.execution.tools.registry.schemas.schema import (
-    build_tools_schema,
 )
 from harness.intelligence.models.contracts.model.contract import (
     ModelClient,
@@ -34,7 +33,6 @@ class Runner:
         project_root: Path | None = None,
     ) -> None:
         self._model_client = model_client
-        self._session = Session()
 
         self._project_root = (
             project_root or Path.cwd()
@@ -58,7 +56,12 @@ class Runner:
             self._tool_registry
         )
 
-        self._load_tools_context()
+        self._session_manager = SessionManager(
+            project_root=self._project_root,
+            tool_registry=self._tool_registry,
+        )
+
+        self._session_manager.create_session()
 
     def handle(
         self,
@@ -67,12 +70,16 @@ class Runner:
         if not request.message.strip():
             return "Please enter a message."
 
+        session = (
+            self._session_manager.current_session
+        )
+
         user_message = Message(
             role="user",
             content=request.message,
         )
 
-        self._session.add_message(
+        session.add_message(
             user_message
         )
 
@@ -85,10 +92,15 @@ class Runner:
                 parsed_command.name
             )
 
+        # self._debug_current_session()
+
+        
+
         response = self._model_client.generate(
-            self._session.messages
+            session.messages
         )
 
+        
         if response.tool_calls:
             tool_results: list[str] = []
 
@@ -109,29 +121,32 @@ class Runner:
             content=response.text,
         )
 
-        self._session.add_message(
+        session.add_message(
             assistant_message
         )
 
         return response.text
 
-    def _load_tools_context(
+    def _debug_current_session(
         self,
     ) -> None:
-        tools = self._tool_registry.list_tools()
-
-        tools_schema = build_tools_schema(
-            tools
+        session = (
+            self._session_manager.current_session
         )
 
-        tools_message = Message(
-            role="system",
-            content=tools_schema,
-        )
+        print("\nSession debug")
+        print(f"Session ID: {session.id}")
+        print(f"Messages: {len(session.messages)}")
 
-        self._session.add_message(
-            tools_message
-        )
+        for index, message in enumerate(
+            session.messages,
+            start=1,
+        ):
+            print("\n" + "=" * 60)
+            print(f"Message {index}")
+            print(f"Role: {message.role}")
+            print("Content:")
+            print(message.content)
 
     def _load_command_context(
         self,
@@ -165,7 +180,11 @@ class Runner:
             content=command_context,
         )
 
-        self._session.add_message(
+        session = (
+            self._session_manager.current_session
+        )
+
+        session.add_message(
             command_message
         )
 
