@@ -94,8 +94,6 @@ class Runner:
 
         # self._debug_current_session()
 
-        
-
         response = self._model_client.generate(
             session.messages
         )

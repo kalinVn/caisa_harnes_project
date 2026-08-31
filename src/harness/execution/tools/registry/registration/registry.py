@@ -4,6 +4,9 @@ from harness.execution.tools.filesystem.read.tool import (
 from harness.execution.tools.filesystem.write.tool import (
     WriteFileTool,
 )
+from harness.execution.tools.shell.execution.tool import (
+    BashTool,
+)
 from harness.execution.tools.registry.registry import (
     ToolRegistry,
 )
@@ -18,4 +21,8 @@ def register_tools(
 
     registry.register(
         WriteFileTool()
+    )
+
+    registry.register(
+        BashTool()
     )

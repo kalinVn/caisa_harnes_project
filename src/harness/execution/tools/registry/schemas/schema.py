@@ -41,6 +41,16 @@ def build_tools_schema(
 
     parts.extend(
         [
+            "Use a tool only when it is necessary "
+            "to fulfill the user's explicit request.",
+            "",
+            "Do not use tools for greetings, "
+            "casual conversation, acknowledgements, "
+            "or questions that can be answered directly.",
+            "",
+            "Do not inspect files or execute commands "
+            "unless the user's request requires it.",
+            "",
             "Tool call format:",
             "",
             "When you need to use a tool, "

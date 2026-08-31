@@ -1,0 +1,89 @@
+from pathlib import Path
+import subprocess
+from typing import Any
+
+
+class BashTool:
+    def __init__(
+        self,
+        working_directory: Path | None = None,
+        timeout_seconds: int = 30,
+    ) -> None:
+        self._working_directory = (
+            working_directory or Path.cwd()
+        ).resolve()
+
+        self._timeout_seconds = timeout_seconds
+
+    @property
+    def name(self) -> str:
+        return "bash"
+
+    @property
+    def description(self) -> str:
+        return (
+            "Executes a Bash command in the project "
+            "working directory."
+        )
+
+    @property
+    def arguments_schema(self) -> dict[str, str]:
+        return {
+            "command": "Bash command to execute.",
+        }
+
+    def execute(
+        self,
+        arguments: dict[str, Any],
+    ) -> str:
+        command = arguments.get("command")
+
+        if not isinstance(command, str):
+            raise ValueError(
+                "bash requires a string 'command'."
+            )
+
+        if not command.strip():
+            raise ValueError(
+                "bash requires a non-empty 'command'."
+            )
+
+        try:
+            completed_process = subprocess.run(
+                command,
+                cwd=self._working_directory,
+                shell=True,
+                executable="/bin/bash",
+                capture_output=True,
+                text=True,
+                timeout=self._timeout_seconds,
+                check=False,
+            )
+            
+        except subprocess.TimeoutExpired as error:
+            raise RuntimeError(
+                "Bash command timed out after "
+                f"{self._timeout_seconds} seconds."
+            ) from error
+
+        parts = [
+            f"Exit code: {completed_process.returncode}"
+        ]
+
+        stdout = completed_process.stdout.strip()
+        stderr = completed_process.stderr.strip()
+
+        if stdout:
+            parts.append(
+                f"Output:\n{stdout}"
+            )
+
+        if stderr:
+            parts.append(
+                f"Errors:\n{stderr}"
+            )
+
+        if not stdout and not stderr:
+            parts.append("No output.")
+
+        return "\n\n".join(parts)
