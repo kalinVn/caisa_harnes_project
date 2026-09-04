@@ -1,11 +1,13 @@
 import os
 
+import httpx
 from google import genai
 from google.genai import types
 from google.genai.errors import ClientError
 
 from harness.domain.messages.message.model import Message
 from harness.intelligence.models.contracts.errors import (
+    ModelConnectionError,
     ModelRateLimitError,
 )
 from harness.intelligence.models.contracts.response.model import (
@@ -28,8 +30,18 @@ class GeminiClient:
                 "Missing GEMINI_API_KEY"
             )
 
+        timeout_seconds = int(
+            os.getenv(
+                "GEMINI_TIMEOUT_SECONDS",
+                "30",
+            )
+        )
+
         self._client = genai.Client(
-            api_key=api_key
+            api_key=api_key,
+            http_options=types.HttpOptions(
+                timeout=timeout_seconds * 1000,
+            ),
         )
 
         self._model = os.getenv(
@@ -71,6 +83,11 @@ class GeminiClient:
                 "Gemini request quota exceeded. "
                 "Wait for the cooldown shown by Gemini, then retry, "
                 "or increase the API project's quota/billing."
+            ) from error
+        except httpx.HTTPError as error:
+            raise ModelConnectionError(
+                "Gemini could not be reached. "
+                "Check the internet connection and try again."
             ) from error
 
         response_text = response.text or ""

@@ -1,3 +1,4 @@
+import json
 from pathlib import Path
 
 from harness.application.commands.loader.loader import (
@@ -15,6 +16,8 @@ from harness.application.orchestration.sessions.manager.manager import (
 from harness.application.request.model.request import Request
 from harness.domain.commands.model import Command
 from harness.domain.messages.message.model import Message
+from harness.domain.tool_calls.call.model import ToolCall
+from harness.domain.tool_calls.result.model import ToolResult
 from harness.execution.tools.registry.registry import (
     ToolRegistry,
 )
@@ -27,6 +30,8 @@ from harness.intelligence.models.contracts.model.contract import (
 
 
 class Runner:
+    MAX_TOOL_STEPS = 20
+
     def __init__(
         self,
         model_client: ModelClient,
@@ -53,7 +58,8 @@ class Runner:
         self._tool_registry = ToolRegistry()
 
         register_tools(
-            self._tool_registry
+            self._tool_registry,
+            working_directory=self._project_root,
         )
 
         self._session_manager = SessionManager(
@@ -87,43 +93,181 @@ class Runner:
             request.message
         )
 
+        command_message = None
+
         if parsed_command is not None:
-            self._load_command_context(
+            command_message = self._load_command_context(
                 parsed_command.name
             )
 
-        # self._debug_current_session()
+        turn_messages: list[Message] = []
+        tool_steps = 0
 
-        response = self._model_client.generate(
-            session.messages
-        )
+        while tool_steps < self.MAX_TOOL_STEPS:
+            model_messages = (
+                list(session.messages)
+                + turn_messages
+            )
 
-        
-        if response.tool_calls:
-            tool_results: list[str] = []
+            if (
+                tool_steps == 0
+                and command_message is not None
+            ):
+                model_messages.append(
+                    command_message
+                )
+
+            response = self._model_client.generate(
+                model_messages
+            )
+
+            if not response.tool_calls:
+                assistant_message = Message(
+                    role="assistant",
+                    content=response.text,
+                )
+
+                session.add_message(
+                    assistant_message
+                )
+
+                return response.text
+
+            turn_messages.append(
+                Message(
+                    role="assistant",
+                    content=self._build_tool_calls_context(
+                        response.tool_calls
+                    ),
+                )
+            )
+
+            tool_results: list[ToolResult] = []
 
             for tool_call in response.tool_calls:
-                result = self._tool_registry.execute(
-                    tool_call.name,
-                    tool_call.arguments,
-                )
+                if tool_steps >= self.MAX_TOOL_STEPS:
+                    break
+
+                tool_steps += 1
+
+                try:
+                    output = self._tool_registry.execute(
+                        tool_call.name,
+                        tool_call.arguments,
+                    )
+
+                    tool_result = ToolResult(
+                        name=tool_call.name,
+                        output=output,
+                    )
+
+                    # TODO: Let a future MemoryService
+                    # select important tool outcomes.
+                    session.add_message(
+                        Message(
+                            role="system",
+                            content=(
+                                self._build_execution_summary(
+                                    tool_call.name,
+                                    tool_call.arguments,
+                                )
+                            ),
+                        )
+                    )
+                except Exception as error:
+                    tool_result = ToolResult(
+                        name=tool_call.name,
+                        output=str(error),
+                        success=False,
+                    )
 
                 tool_results.append(
-                    f"{tool_call.name}: {result}"
+                    tool_result
                 )
 
-            return "\n".join(tool_results)
+            turn_messages.append(
+                Message(
+                    role="user",
+                    content=self._build_tool_results_context(
+                        tool_results
+                    ),
+                )
+            )
 
-        assistant_message = Message(
-            role="assistant",
-            content=response.text,
+        limit_message = (
+            "Tool execution stopped after reaching "
+            f"the limit of {self.MAX_TOOL_STEPS} steps."
         )
 
         session.add_message(
-            assistant_message
+            Message(
+                role="assistant",
+                content=limit_message,
+            )
         )
 
-        return response.text
+        return limit_message
+
+    def _build_tool_calls_context(
+        self,
+        tool_calls: list[ToolCall],
+    ) -> str:
+        raw_calls = [
+            {
+                "tool": tool_call.name,
+                "arguments": tool_call.arguments,
+            }
+            for tool_call in tool_calls
+        ]
+
+        return "Raw tool calls:\n" + json.dumps(
+            raw_calls,
+            ensure_ascii=False,
+            default=str,
+        )
+
+    def _build_execution_summary(
+        self,
+        tool_name: str,
+        arguments: dict[str, object],
+    ) -> str:
+        path = arguments.get("path")
+
+        if tool_name == "write_file" and path:
+            action = f"updated {path}"
+        elif tool_name == "read_file" and path:
+            action = f"read {path}"
+        else:
+            action = "completed successfully"
+
+        return f"Tool execution summary: {tool_name} {action}."
+
+    def _build_tool_results_context(
+        self,
+        tool_results: list[ToolResult],
+    ) -> str:
+        parts = [
+            "The requested tools have finished.",
+        ]
+
+        for tool_result in tool_results:
+            parts.append(
+                "\n".join(
+                    [
+                        f"Tool: {tool_result.name}",
+                        f"Success: {tool_result.success}",
+                        "Output:",
+                        tool_result.output,
+                    ]
+                )
+            )
+
+        parts.append(
+            "Use these results to continue the task. "
+            "If no more tools are needed, respond normally."
+        )
+
+        return "\n\n".join(parts)
 
     def _debug_current_session(
         self,
@@ -149,7 +293,7 @@ class Runner:
     def _load_command_context(
         self,
         command_name: str,
-    ) -> None:
+    ) -> Message:
         command_path = (
             self._command_resolver.resolve(
                 command_name
@@ -173,17 +317,9 @@ class Runner:
             )
         )
 
-        command_message = Message(
+        return Message(
             role="system",
             content=command_context,
-        )
-
-        session = (
-            self._session_manager.current_session
-        )
-
-        session.add_message(
-            command_message
         )
 
     def _build_command_context(
