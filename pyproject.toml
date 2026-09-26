@@ -7,7 +7,10 @@ name = "ai-harness"
 version = "0.1.0"
 description = "A command-line AI harness."
 dependencies = [
-    "openai"
+    "openai",
+    "google-genai",
+    "httpx",
+    "python-dotenv"
 ]
 requires-python = ">=3.10"
 

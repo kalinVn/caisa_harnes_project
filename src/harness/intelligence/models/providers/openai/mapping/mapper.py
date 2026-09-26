@@ -1,4 +1,5 @@
 from harness.domain.messages.message.model import Message
+from harness.intelligence.models.contracts.response.instruction import MODEL_RESPONSE_INSTRUCTION
 
 
 def map_messages(
@@ -11,4 +12,4 @@ def map_messages(
             "content": message.content,
         }
         for message in messages
-    ]
+    ] + [{"role": "system", "content": MODEL_RESPONSE_INSTRUCTION}]

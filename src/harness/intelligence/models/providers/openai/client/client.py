@@ -3,6 +3,8 @@ import os
 from openai import OpenAI
 
 from harness.domain.messages.message.model import Message
+from harness.intelligence.models.contracts.response.model import ModelResponse
+from harness.intelligence.models.parsing.response.parser import parse_model_response
 from harness.intelligence.models.providers.openai.mapping.mapper import (
     map_messages,
 )
@@ -20,7 +22,7 @@ class OpenAIClient:
     def generate(
         self,
         messages: list[Message],
-    ) -> str:
+    ) -> ModelResponse:
 
         if not messages:
             raise ValueError(
@@ -34,4 +36,4 @@ class OpenAIClient:
             input=input_messages,
         )
 
-        return response.output_text
+        return parse_model_response(response.output_text)

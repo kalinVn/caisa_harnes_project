@@ -38,3 +38,7 @@ def main() -> None:
             continue
 
         print(f"\nHarness > {response}\n")
+
+
+if __name__ == "__main__":
+    main()

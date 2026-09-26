@@ -3,23 +3,10 @@ from google.genai import types
 from harness.domain.messages.message.model import Message
 
 
-TOOL_CALL_INSTRUCTION = """
-When you need to use a tool, respond only with valid JSON.
-
-Use exactly this format:
-
-{
-  "tool": "<tool_name>",
-  "arguments": {
-    "<argument_name>": "<argument_value>"
-  }
-}
-
-Do not wrap the JSON in Markdown code fences.
-Do not include explanatory text before or after the JSON.
-
-If no tool is required, respond normally with text.
-""".strip()
+from harness.intelligence.models.contracts.response.instruction import (
+    MODEL_RESPONSE_INSTRUCTION,
+    TOOL_CALL_INSTRUCTION,  # Backward-compatible import location.
+)
 
 
 def map_messages(
@@ -53,7 +40,7 @@ def map_messages(
         )
 
     system_messages.append(
-        TOOL_CALL_INSTRUCTION
+        MODEL_RESPONSE_INSTRUCTION
     )
 
     system_instruction = "\n\n".join(

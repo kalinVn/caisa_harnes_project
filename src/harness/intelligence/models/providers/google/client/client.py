@@ -3,7 +3,7 @@ import os
 import httpx
 from google import genai
 from google.genai import types
-from google.genai.errors import ClientError
+from google.genai.errors import ClientError, ServerError
 
 from harness.domain.messages.message.model import Message
 from harness.intelligence.models.contracts.errors import (
@@ -13,8 +13,8 @@ from harness.intelligence.models.contracts.errors import (
 from harness.intelligence.models.contracts.response.model import (
     ModelResponse,
 )
-from harness.intelligence.models.parsing.tool_calls.parser import (
-    parse_tool_calls,
+from harness.intelligence.models.parsing.response.parser import (
+    parse_model_response,
 )
 from harness.intelligence.models.providers.google.mapping.mapper import (
     map_messages,
@@ -41,6 +41,14 @@ class GeminiClient:
             api_key=api_key,
             http_options=types.HttpOptions(
                 timeout=timeout_seconds * 1000,
+                retry_options=types.HttpRetryOptions(
+                    attempts=4,
+                    initial_delay=1.0,
+                    max_delay=8.0,
+                    exp_base=2.0,
+                    jitter=1.0,
+                    http_status_codes=[500, 502, 503, 504],
+                ),
             ),
         )
 
@@ -62,12 +70,10 @@ class GeminiClient:
                 "Cannot generate response with empty conversation."
             )
 
-        config = None
-
-        if system_instruction:
-            config = types.GenerateContentConfig(
-                system_instruction=system_instruction
-            )
+        config = types.GenerateContentConfig(
+            system_instruction=system_instruction,
+            response_mime_type="application/json",
+        )
 
         try:
             response = self._client.models.generate_content(
@@ -84,6 +90,11 @@ class GeminiClient:
                 "Wait for the cooldown shown by Gemini, then retry, "
                 "or increase the API project's quota/billing."
             ) from error
+        except ServerError as error:
+            raise ModelConnectionError(
+                "Gemini is temporarily unavailable or experiencing high demand. "
+                "Please try again later."
+            ) from error
         except httpx.HTTPError as error:
             raise ModelConnectionError(
                 "Gemini could not be reached. "
@@ -92,11 +103,17 @@ class GeminiClient:
 
         response_text = response.text or ""
 
-        tool_calls = parse_tool_calls(
-            response_text
-        )
+        if not response_text.strip():
+            details = []
+            if response.prompt_feedback and response.prompt_feedback.block_reason:
+                details.append(f"block_reason={response.prompt_feedback.block_reason}")
+            for candidate in response.candidates or []:
+                if candidate.finish_reason:
+                    details.append(f"finish_reason={candidate.finish_reason}")
+            suffix = f" ({', '.join(details)})" if details else ""
+            raise ValueError(f"Gemini returned no response text{suffix}")
 
-        return ModelResponse(
-            text=response_text,
-            tool_calls=tool_calls,
-        )
+        try:
+            return parse_model_response(response_text)
+        except ValueError as error:
+            raise ValueError(f"Gemini returned an invalid model response: {error}") from error

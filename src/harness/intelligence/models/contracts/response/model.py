@@ -4,6 +4,13 @@ from harness.domain.tool_calls.call.model import ToolCall
 
 
 @dataclass(frozen=True)
+class ToolResultSummary:
+    id: str
+    summary: str
+
+
+@dataclass(frozen=True)
 class ModelResponse:
     text: str = ""
     tool_calls: list[ToolCall] = field(default_factory=list)
+    tool_result_summaries: list[ToolResultSummary] = field(default_factory=list)
