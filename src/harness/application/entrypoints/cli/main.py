@@ -4,6 +4,7 @@ from harness.application.entrypoints.cli.input.reader import read_input
 from harness.application.request.model.request import Request
 from harness.application.orchestration.engine.runner.runner import Runner
 from harness.intelligence.models.contracts.errors import (
+    ModelConnectionError,
     ModelRateLimitError,
 )
 from harness.intelligence.models.routing.selector.selector import create_model_client
@@ -29,8 +30,15 @@ def main() -> None:
 
         try:
             response = runner.handle(request)
-        except ModelRateLimitError as error:
+        except (
+            ModelConnectionError,
+            ModelRateLimitError,
+        ) as error:
             print(f"\nHarness > {error}\n")
             continue
 
         print(f"\nHarness > {response}\n")
+
+
+if __name__ == "__main__":
+    main()

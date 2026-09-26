@@ -1,3 +1,5 @@
+from pathlib import Path
+
 from harness.execution.tools.filesystem.read.tool import (
     ReadFileTool,
 )
@@ -14,6 +16,7 @@ from harness.execution.tools.registry.registry import (
 
 def register_tools(
     registry: ToolRegistry,
+    working_directory: Path | None = None,
 ) -> None:
     registry.register(
         ReadFileTool()
@@ -24,5 +27,7 @@ def register_tools(
     )
 
     registry.register(
-        BashTool()
+        BashTool(
+            working_directory=working_directory
+        )
     )
