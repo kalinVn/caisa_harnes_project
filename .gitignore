@@ -1,18 +1,73 @@
+# Local environment settings; retain the shared template.
 .env
 .env.*
 !.env.example
+/.envrc
+*.env
+*.env.local
+
+# Local credentials and private key material.
+/.credentials/
+/credentials.json
+/credentials.local.*
+/secrets.local.*
+/service-account*.json
+*.key
+*.pem
+*.p12
+*.pfx
+id_rsa
+id_ed25519
+id_ecdsa
 
 node_modules/
 
+# Python bytecode and tool caches.
 __pycache__/
 *.py[cod]
 .pytest_cache/
 .mypy_cache/
 .ruff_cache/
+.hypothesis/
+
+# Virtual environments.
+.venv/
+venv/
+env/
+ENV/
+.tox/
+.nox/
+
+# Coverage reports.
+.coverage
+.coverage.*
+htmlcov/
+coverage.xml
+coverage.json
+*.cover
+
+# Packaging and build output.
 *.egg-info/
+.eggs/
 build/
 dist/
 
+# Local logs, temporary files, and editor backups.
+*.log
+/logs/
+/tmp/
+/temp/
+*.tmp
+*.temp
+*.swp
+*.swo
+*~
+
+# Generated outputs from manual tool checks.
+/test_write_file
+/tool-test.txt
+
+# Machine-specific IDE and OS files.
 .idea/
 .vscode/
 .DS_Store
