@@ -2,11 +2,11 @@ import json
 import unittest
 from unittest.mock import Mock, patch
 
-from harness.application.orchestration.engine.runner.runner import Runner
-from harness.application.orchestration.sessions.manager.manager import SessionManager
-from harness.application.request.model.request import Request
-from harness.domain.messages.message.model import Message
-from harness.domain.tool_calls.result.model import ToolResult
+from harness.app.orchestrator import Runner
+from harness.app.session_manager import SessionManager
+from harness.app.models.request import Request
+from harness.app.domain.message import Message
+from harness.app.domain.tool_result import ToolResult
 from harness.intelligence.models.parsing.response.parser import parse_model_response
 
 
@@ -33,7 +33,7 @@ class SummaryIDRegressionTest(unittest.TestCase):
             return "new output"
 
         runner._tool_registry.execute = Mock(side_effect=execute)
-        with patch("harness.domain.tool_calls.result.model.uuid4", return_value="future-id"):
+        with patch("harness.app.domain.tool_result.uuid4", return_value="future-id"):
             self.assertEqual(runner.handle(Request.create("Continue")), "Done")
         stored = [r for m in session.messages for r in m.tool_results]
         self.assertEqual([r.id for r in stored], ids + ["future-id"])

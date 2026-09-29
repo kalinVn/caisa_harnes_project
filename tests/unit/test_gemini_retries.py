@@ -5,9 +5,9 @@ from unittest.mock import patch
 import httpx
 from google.genai.errors import ClientError, ServerError
 
-from harness.application.entrypoints.cli.main import main
-from harness.domain.messages.message.model import Message
-from harness.intelligence.models.contracts.errors import (
+from harness.app.cli.main import main
+from harness.app.domain.message import Message
+from harness.app.models.errors import (
     ModelConnectionError,
     ModelRateLimitError,
 )
@@ -66,9 +66,9 @@ class GeminiRetriesTest(unittest.TestCase):
 
     def test_cli_stays_open_after_unavailable_error(self):
         with (
-            patch("harness.application.entrypoints.cli.main.create_model_client"),
-            patch("harness.application.entrypoints.cli.main.Runner") as runner,
-            patch("harness.application.entrypoints.cli.main.read_input",
+            patch("harness.app.cli.main.create_model_client"),
+            patch("harness.app.cli.main.Runner") as runner,
+            patch("harness.app.cli.main.read_input",
                   side_effect=["Hello", "Try again", "exit"]),
             patch("sys.stdout", new_callable=io.StringIO) as stdout,
         ):

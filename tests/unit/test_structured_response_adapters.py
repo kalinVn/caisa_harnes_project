@@ -4,8 +4,8 @@ from unittest.mock import Mock
 
 from google.genai import types
 
-from harness.domain.messages.message.model import Message
-from harness.intelligence.models.contracts.response.instruction import MODEL_RESPONSE_INSTRUCTION
+from harness.app.domain.message import Message
+from harness.app.models.response_instruction import MODEL_RESPONSE_INSTRUCTION
 from harness.intelligence.models.parsing.response.parser import parse_model_response
 from harness.intelligence.models.providers.google.client.client import GeminiClient
 from harness.intelligence.models.providers.google.mapping.mapper import map_messages as google_messages

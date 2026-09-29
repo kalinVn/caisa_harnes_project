@@ -1,9 +1,9 @@
 from google.genai import types
 
-from harness.domain.messages.message.model import Message
+from harness.app.domain.message import Message
 
 
-from harness.intelligence.models.contracts.response.instruction import (
+from harness.app.models.response_instruction import (
     MODEL_RESPONSE_INSTRUCTION,
     TOOL_CALL_INSTRUCTION,  # Backward-compatible import location.
 )

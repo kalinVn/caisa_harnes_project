@@ -3,17 +3,17 @@ from copy import deepcopy
 from unittest.mock import Mock, patch
 from uuid import UUID
 
-from harness.application.orchestration.engine.runner.runner import Runner
-from harness.application.orchestration.sessions.manager.manager import SessionManager
-from harness.application.request.model.request import Request
-from harness.domain.messages.message.model import Message
-from harness.domain.tool_calls.call.model import ToolCall
-from harness.domain.tool_calls.result.model import ToolResult
-from harness.intelligence.context.building.messages.builder import ModelMessagesBuilder
-from harness.intelligence.models.contracts.response.model import ModelResponse
+from harness.app.orchestrator import Runner
+from harness.app.session_manager import SessionManager
+from harness.app.models.request import Request
+from harness.app.domain.message import Message
+from harness.app.domain.tool_call import ToolCall
+from harness.app.domain.tool_result import ToolResult
+from harness.app.builder.model_message_builder import ModelMessageBuilder
+from harness.app.models.response import ModelResponse
 
 
-class ModelMessagesBuilderTest(unittest.TestCase):
+class ModelMessageBuilderTest(unittest.TestCase):
     def test_tool_results_generate_unique_ids_and_allow_summary_assignment(self):
         first = ToolResult("read_file", "contents")
         second = ToolResult("read_file", "contents")
@@ -37,7 +37,7 @@ class ModelMessagesBuilderTest(unittest.TestCase):
         ]
         original = deepcopy(messages)
 
-        model_messages = ModelMessagesBuilder().build(messages)
+        model_messages = ModelMessageBuilder().build(messages)
 
         self.assertIsNot(model_messages, messages)
         self.assertEqual(len(model_messages), len(messages))
@@ -61,7 +61,7 @@ class ModelMessagesBuilderTest(unittest.TestCase):
         messages = [message, another_message, Message(role="assistant", content="Continuing")]
         original = deepcopy(messages)
 
-        model_messages = ModelMessagesBuilder().build(messages)
+        model_messages = ModelMessageBuilder().build(messages)
 
         content = model_messages[0].content
         self.assertIn(summarized.summary, content)

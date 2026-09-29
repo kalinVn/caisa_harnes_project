@@ -1,5 +1,5 @@
-from harness.domain.messages.message.model import Message
-from harness.intelligence.models.contracts.response.instruction import MODEL_RESPONSE_INSTRUCTION
+from harness.app.domain.message import Message
+from harness.app.models.response_instruction import MODEL_RESPONSE_INSTRUCTION
 
 
 def map_messages(

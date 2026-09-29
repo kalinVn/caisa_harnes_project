@@ -25,27 +25,31 @@ caisa_harnes_project/
 ├── scripts/
 ├── src/harness/
 │   ├── application/
-│   │   ├── commands/{loader/loader.py,parser/parser.py,resolver/resolver.py}
-│   │   ├── entrypoints/
-│   │   │   ├── api/{requests/parser.py,responses/builder.py,routes/router.py}
-│   │   │   └── cli/{commands/handler.py,input/reader.py,output/writer.py,main.py}
-│   │   ├── orchestration/
-│   │   │   ├── engine/{lifecycle/lifecycle.py,loop/loop.py,runner/runner.py}
-│   │   │   ├── routing/{dispatcher/dispatcher.py,resolver/resolver.py}
-│   │   │   └── state/{session/state.py,task/state.py}
-│   │   └── request/model/request.py
+│   │   └── orchestration/
+│   │       ├── engine/{lifecycle/lifecycle.py,loop/loop.py}
+│   │       ├── routing/{dispatcher/dispatcher.py,resolver/resolver.py}
+│   │       └── state/{session/state.py,task/state.py}
+│   ├── app/
+│   │   ├── cli/{main.py,reader.py}
+│   │   ├── builder/model_message_builder.py
+│   │   ├── models/{request.py,response.py,model_client.py,tool_result_summary.py,errors.py,response_instruction.py}
+│   │   ├── loader/command_loader.py
+│   │   ├── parser/command_parser.py
+│   │   ├── resolver/command_resolver.py
+│   │   ├── domain/{command.py,message.py,session.py,tool_call.py,tool_result.py}
+│   │   ├── tools/{tool_registry.py,register_tools.py}
+│   │   ├── orchestrator.py
+│   │   └── session_manager.py
 │   ├── domain/
-│   │   ├── commands/model.py
-│   │   ├── messages/{message/model.py,role/model.py}
-│   │   ├── sessions/{session/model.py,state/model.py}
-│   │   ├── tasks/{status/model.py,task/model.py}
-│   │   └── tool_calls/{call/model.py,result/model.py}
+│   │   ├── messages/role/model.py
+│   │   ├── sessions/state/model.py
+│   │   └── tasks/{status/model.py,task/model.py}
 │   ├── execution/
 │   │   ├── tools/
 │   │   │   ├── contracts/tool.py
 │   │   │   ├── filesystem/{edit,read,search,write}/tool.py
 │   │   │   ├── git/{commit,diff,history,status}/tool.py
-│   │   │   ├── registry/{registration/registry.py,schemas/schema.py,registry.py}
+│   │   │   ├── registry/schemas/schema.py
 │   │   │   ├── shell/{execution/tool.py,result/model.py}
 │   │   │   └── testing/{result/model.py,runner/tool.py}
 │   │   └── workflows/
@@ -73,12 +77,11 @@ caisa_harnes_project/
 │       │   ├── review/{analyzer/analyzer.py,findings/builder.py,runner/runner.py}
 │       │   └── testing/{planner/planner.py,runner/runner.py,verifier/verifier.py}
 │       ├── context/
-│       │   ├── building/{builder/builder.py,instructions/loader.py,messages/builder.py}
+│       │   ├── building/{builder/builder.py,instructions/loader.py}
 │       │   ├── compression/{budget/manager.py,summarizer/summarizer.py}
 │       │   ├── retrieval/{files,memory,search}/retriever.py
 │       │   └── window/{manager/manager.py,tokens/counter.py}
 │       └── models/
-│           ├── contracts/{model/contract.py,request/model.py,response/model.py,errors.py}
 │           ├── providers/
 │           │   ├── anthropic/{client/client.py,mapping/mapper.py,tools/mapper.py}
 │           │   ├── google/{client/client.py,mapping/mapper.py}
@@ -94,8 +97,9 @@ caisa_harnes_project/
 
 ## Main responsibilities
 
-- `application` owns entry points, command handling, requests, and orchestration.
-- `domain` contains framework-independent domain models.
+- `app` owns the CLI, application models and model contracts, command services, active domain models, tool registration, runner, and session manager.
+- `application` contains remaining orchestration scaffolding.
+- `domain` contains remaining role, session-state, and task scaffolding.
 - `intelligence` contains agents, context management, and model integrations.
 - `execution` contains executable tools and workflow steps.
 - `infrastructure` contains persistence, observability, and security adapters.
@@ -113,30 +117,30 @@ agent, workflow, API, infrastructure, and tool modules are currently empty.
 
 | Object or function | Location | Responsibility and current logic |
 |---|---|---|
-| `Request` | `application/request/model/request.py` | Immutable application input containing the user's message and a UTC creation timestamp. `Request.create()` supplies the timestamp. |
-| `Runner` | `application/orchestration/engine/runner/runner.py` | Central application orchestrator. Owns one in-memory `Session`, command services, and a tool registry. Validates input, stores messages, loads optional command context, calls the selected model, and stores the response. |
-| `ParsedCommand` / `parse_command()` | `application/commands/parser/parser.py` | Recognizes input beginning with `execute command` (case-insensitive), separates the command name and arguments, and rejects a missing command name. Arguments are parsed but are not used by `Runner` yet. |
-| `CommandResolver` | `application/commands/resolver/resolver.py` | Maps a command name to `.caisa/commands/<name>.md` and rejects unknown commands. |
-| `CommandLoader` | `application/commands/loader/loader.py` | Parses Markdown sections headed by `# `. Requires `Name` and `Description`; stores every other section in `Command.sections`. |
-| `Command` | `domain/commands/model.py` | Immutable command definition: name, description, and additional Markdown sections. |
-| `Message` | `domain/messages/message/model.py` | Immutable conversation message. Its role is restricted to `user`, `assistant`, or `system`. |
-| `Session` | `domain/sessions/session/model.py` | Mutable in-memory conversation with a generated UUID and ordered messages. It is created once per `Runner`; there is no persistence or reset behavior yet. |
-| `ToolCall` | `domain/tool_calls/call/model.py` | Immutable name-and-arguments representation for a future model-requested tool call. It is not connected to the model loop yet. |
-| `ModelClient` | `intelligence/models/contracts/model/contract.py` | Provider-neutral protocol requiring `generate(messages) -> str`. This is the boundary used by `Runner`. |
+| `Request` | `app/models/request.py` | Immutable application input containing the user's message and a UTC creation timestamp. `Request.create()` supplies the timestamp. |
+| `Runner` | `app/orchestrator.py` | Central application orchestrator. Owns one in-memory `Session`, command services, and a tool registry. Validates input, stores messages, loads optional command context, calls the selected model, and stores the response. |
+| `ParsedCommand` / `parse_command()` | `app/parser/command_parser.py` | Recognizes input beginning with `execute command` (case-insensitive), separates the command name and arguments, and rejects a missing command name. Arguments are parsed but are not used by `Runner` yet. |
+| `CommandResolver` | `app/resolver/command_resolver.py` | Maps a command name to `.caisa/commands/<name>.md` and rejects unknown commands. |
+| `CommandLoader` | `app/loader/command_loader.py` | Parses Markdown sections headed by `# `. Requires `Name` and `Description`; stores every other section in `Command.sections`. |
+| `Command` | `app/domain/command.py` | Immutable command definition: name, description, and additional Markdown sections. |
+| `Message` | `app/domain/message.py` | Immutable conversation message. Its role is restricted to `user`, `assistant`, or `system`. |
+| `Session` | `app/domain/session.py` | Mutable in-memory conversation with a generated UUID and ordered messages. It is created once per `Runner`; there is no persistence or reset behavior yet. |
+| `ToolCall` | `app/domain/tool_call.py` | Immutable name-and-arguments representation for a future model-requested tool call. It is not connected to the model loop yet. |
+| `ModelClient` | `app/models/model_client.py` | Provider-neutral protocol requiring `generate(messages) -> str`. This is the boundary used by `Runner`. |
 | `create_model_client()` | `intelligence/models/routing/selector/selector.py` | Selects Gemini for `google`/`gemini` (the default) or OpenAI for `openai`, using `MODEL_PROVIDER`. Other values fail immediately. |
 | `GeminiClient` | `intelligence/models/providers/google/client/client.py` | Reads `GEMINI_API_KEY` and optional `GEMINI_MODEL`, maps messages to the Google SDK, calls `generate_content`, and converts HTTP 429 errors into `ModelRateLimitError`. |
 | Google `map_messages()` | `intelligence/models/providers/google/mapping/mapper.py` | Converts assistant messages to Gemini's `model` role, keeps user messages as `user`, and combines all system messages into one system instruction. |
 | `OpenAIClient` | `intelligence/models/providers/openai/client/client.py` | Uses the OpenAI Responses API and optional `OPENAI_MODEL`, maps the session messages, and returns `response.output_text`. |
 | OpenAI `map_messages()` | `intelligence/models/providers/openai/mapping/mapper.py` | Converts domain messages into dictionaries containing `role` and `content`. |
-| `ModelRateLimitError` | `intelligence/models/contracts/errors.py` | Provider-neutral error currently used for Gemini quota/rate-limit failures and handled by the packaged CLI. |
+| `ModelRateLimitError` | `app/models/errors.py` | Provider-neutral error currently used for Gemini quota/rate-limit failures and handled by the packaged CLI. |
 | `Tool` | `execution/tools/contracts/tool.py` | Protocol for named tools with a description and `execute(arguments) -> str`. |
-| `ToolRegistry` | `execution/tools/registry/registry.py` | Registers unique tools, resolves tools by name, executes them, and lists registered instances. |
-| `register_tools()` | `execution/tools/registry/registration/registry.py` | Registers `ReadFileTool` and `WriteFileTool` in each `Runner`. |
+| `ToolRegistry` | `app/tools/tool_registry.py` | Registers unique tools, resolves tools by name, executes them, and lists registered instances. |
+| `register_tools()` | `app/tools/register_tools.py` | Registers `ReadFileTool` and `WriteFileTool` in each `Runner`. |
 | `ReadFileTool` | `execution/tools/filesystem/read/tool.py` | Validates a string path, requires an existing file, and returns its UTF-8 text. The runner uses it internally to load command files. |
 | `WriteFileTool` | `execution/tools/filesystem/write/tool.py` | Validates path/content strings, creates parent directories, writes UTF-8 text, and returns a success message. It is registered but cannot currently be invoked by a model response. |
 | `CAISAPromptLoader` | `intelligence/context/building/instructions/loader.py` | Reads `.caisa/CAISA.md`, returning an empty string if absent. It exists but is not currently used by `Runner`, so the project instructions are not sent to the model. |
-| `read_input()` | `application/entrypoints/cli/input/reader.py` | Reads and trims one terminal message. EOF or Ctrl+C is converted into `exit`. |
-| CLI `main()` | `application/entrypoints/cli/main.py` | Loads `.env`, creates the selected model and runner, runs the prompt loop, stops on `exit`, and reports model rate-limit errors without ending the process. |
+| `read_input()` | `app/cli/reader.py` | Reads and trims one terminal message. EOF or Ctrl+C is converted into `exit`. |
+| CLI `main()` | `app/cli/main.py` | Loads `.env`, creates the selected model and runner, runs the prompt loop, stops on `exit`, and reports model rate-limit errors without ending the process. |
 
 ## Runtime workflow schema
 
@@ -230,7 +234,6 @@ sequenceDiagram
 
 ### Scaffolded but not implemented
 
-- HTTP API routes, request parsing, and response building.
 - Agent types (`coding`, `review`, `testing`, `debugging`, and `architect`).
 - Context building, retrieval, compression, token counting, and window control,
   except for the unused `CAISAPromptLoader`.
@@ -253,9 +256,5 @@ sequenceDiagram
 - Read/write tools accept unrestricted paths; the security scaffolding is empty.
 - Provider calls are synchronous and have no retry, timeout, streaming, or
   general provider-error translation.
-- `main.py` at the repository root duplicates the packaged CLI but does not
-  handle `ModelRateLimitError`.
-- The existing CLI unit test mocks input but not model construction and expects
-  behavior that no longer matches the current implementation; it is stale.
 - `pyproject.toml` declares only `openai`, while the implemented CLI also imports
   `python-dotenv` and the Google Gen AI SDK.

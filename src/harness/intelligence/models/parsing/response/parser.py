@@ -2,11 +2,9 @@
 import json
 import math
 
-from harness.domain.tool_calls.call.model import ToolCall
-from harness.intelligence.models.contracts.response.model import (
-    ModelResponse,
-    ToolResultSummary,
-)
+from harness.app.domain.tool_call import ToolCall
+from harness.app.models.response import ModelResponse
+from harness.app.models.tool_result_summary import ToolResultSummary
 
 
 def _object(pairs):

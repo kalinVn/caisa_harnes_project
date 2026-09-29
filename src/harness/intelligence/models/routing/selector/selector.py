@@ -1,6 +1,6 @@
 import os
 
-from harness.intelligence.models.contracts.model.contract import ModelClient
+from harness.app.models.model_client import ModelClient
 from harness.intelligence.models.providers.google.client.client import (
     GeminiClient,
 )

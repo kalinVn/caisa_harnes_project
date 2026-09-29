@@ -1,6 +1,6 @@
 import json
 
-from harness.domain.tool_calls.call.model import ToolCall
+from harness.app.domain.tool_call import ToolCall
 
 
 def parse_tool_calls(text: str) -> list[ToolCall]:

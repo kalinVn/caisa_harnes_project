@@ -5,14 +5,12 @@ from google import genai
 from google.genai import types
 from google.genai.errors import ClientError, ServerError
 
-from harness.domain.messages.message.model import Message
-from harness.intelligence.models.contracts.errors import (
+from harness.app.domain.message import Message
+from harness.app.models.errors import (
     ModelConnectionError,
     ModelRateLimitError,
 )
-from harness.intelligence.models.contracts.response.model import (
-    ModelResponse,
-)
+from harness.app.models.response import ModelResponse
 from harness.intelligence.models.parsing.response.parser import (
     parse_model_response,
 )
