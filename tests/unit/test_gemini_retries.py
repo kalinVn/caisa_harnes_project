@@ -67,7 +67,7 @@ class GeminiRetriesTest(unittest.TestCase):
     def test_cli_stays_open_after_unavailable_error(self):
         with (
             patch("harness.app.cli.main.create_model_client"),
-            patch("harness.app.cli.main.Runner") as runner,
+            patch("harness.app.cli.main.Orchestrator") as runner,
             patch("harness.app.cli.main.read_input",
                   side_effect=["Hello", "Try again", "exit"]),
             patch("sys.stdout", new_callable=io.StringIO) as stdout,

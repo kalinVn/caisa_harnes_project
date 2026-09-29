@@ -3,7 +3,7 @@ from copy import deepcopy
 from unittest.mock import Mock, patch
 from uuid import UUID
 
-from harness.orchestrator import Runner
+from harness.orchestrator import Orchestrator
 from harness.session_manager import SessionManager
 from harness.models.request import Request
 from harness.domain.message import Message
@@ -97,7 +97,7 @@ class ModelMessageBuilderTest(unittest.TestCase):
                     ModelResponse(text="Next answer"),
                 ]
                 with patch.object(SessionManager, "_load_system_prompt", return_value="Instructions"):
-                    runner = Runner(client)
+                    runner = Orchestrator(client)
 
                 raw_output = "large raw output or error details"
                 runner._tool_registry.execute = Mock(return_value=raw_output)
@@ -132,11 +132,11 @@ class ModelMessageBuilderTest(unittest.TestCase):
         ]
         command_context = Message(role="system", content="Command instructions")
         with patch.object(SessionManager, "_load_system_prompt", return_value="Instructions"):
-            runner = Runner(client)
-        runner._load_command_context = Mock(return_value=command_context)
+            runner = Orchestrator(client)
         runner._tool_registry.execute = Mock(return_value="full configuration")
 
-        self.assertEqual(runner.handle(Request.create("execute command review")), "Done")
+        with patch("harness.orchestrator.load_command_context", return_value=command_context):
+            self.assertEqual(runner.handle(Request.create("execute command review")), "Done")
 
         first_messages = client.generate.call_args_list[0].args[0]
         second_messages = client.generate.call_args_list[1].args[0]

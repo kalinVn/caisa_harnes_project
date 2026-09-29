@@ -1,7 +1,7 @@
 import unittest
 from unittest.mock import Mock, patch
 
-from harness.orchestrator import Runner
+from harness.orchestrator import Orchestrator
 from harness.session_manager import SessionManager
 from harness.models.request import Request
 from harness.domain.message import Message
@@ -11,7 +11,7 @@ from harness.models.response import ModelResponse
 from harness.models.tool_result_summary import ToolResultSummary
 
 
-class RunnerToolResultSummariesTest(unittest.TestCase):
+class OrchestratorToolResultSummariesTest(unittest.TestCase):
     def test_applies_summaries_before_final_response_or_new_tool_execution(self):
         for has_tool_calls in (False, True):
             with self.subTest(has_tool_calls=has_tool_calls):
@@ -31,7 +31,7 @@ class RunnerToolResultSummariesTest(unittest.TestCase):
                     ModelResponse(text="Done"),
                 ]
                 with patch.object(SessionManager, "_load_system_prompt", return_value="Instructions"):
-                    runner = Runner(client)
+                    runner = Orchestrator(client)
                 session = runner._session_manager.current_session
                 stored_message = Message(role="user", content=result.output, tool_results=(result, untouched))
                 session.add_message(stored_message)

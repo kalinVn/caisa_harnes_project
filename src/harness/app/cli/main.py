@@ -2,7 +2,7 @@ from dotenv import load_dotenv
 
 from harness.app.cli.reader import read_input
 from harness.models.request import Request
-from harness.orchestrator import Runner
+from harness.orchestrator import Orchestrator
 from harness.models.errors import (
     ModelConnectionError,
     ModelRateLimitError,
@@ -17,7 +17,7 @@ def main() -> None:
     print("Type 'exit' to stop.\n")
 
     model_client = create_model_client()
-    runner = Runner(model_client=model_client)
+    runner = Orchestrator(model_client=model_client)
 
     while True:
         user_message = read_input()
