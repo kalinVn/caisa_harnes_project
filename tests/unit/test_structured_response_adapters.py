@@ -4,13 +4,13 @@ from unittest.mock import Mock
 
 from google.genai import types
 
-from harness.app.domain.message import Message
-from harness.app.models.response_instruction import MODEL_RESPONSE_INSTRUCTION
-from harness.intelligence.models.parsing.response.parser import parse_model_response
-from harness.intelligence.models.providers.google.client.client import GeminiClient
-from harness.intelligence.models.providers.google.mapping.mapper import map_messages as google_messages
-from harness.intelligence.models.providers.openai.client.client import OpenAIClient
-from harness.intelligence.models.providers.openai.mapping.mapper import map_messages as openai_messages
+from harness.domain.message import Message
+from harness.models.response_instruction import MODEL_RESPONSE_INSTRUCTION
+from harness.parser.response_parser import parse_model_response
+from harness.providers.google_client import GeminiClient
+from harness.mappers.google_mapper import map_messages as google_messages
+from harness.providers.openai_client import OpenAIClient
+from harness.mappers.openai_mapper import map_messages as openai_messages
 
 
 class StructuredResponseAdaptersTest(unittest.TestCase):

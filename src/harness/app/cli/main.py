@@ -1,13 +1,13 @@
 from dotenv import load_dotenv
 
 from harness.app.cli.reader import read_input
-from harness.app.models.request import Request
-from harness.app.orchestrator import Runner
-from harness.app.models.errors import (
+from harness.models.request import Request
+from harness.orchestrator import Runner
+from harness.models.errors import (
     ModelConnectionError,
     ModelRateLimitError,
 )
-from harness.intelligence.models.routing.selector.selector import create_model_client
+from harness.factory.model_client_factory import create_model_client
 
 
 def main() -> None:

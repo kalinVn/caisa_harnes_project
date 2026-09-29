@@ -1,10 +1,10 @@
 import json
 import unittest
 
-from harness.app.domain.tool_call import ToolCall
-from harness.app.models.response import ModelResponse
-from harness.app.models.tool_result_summary import ToolResultSummary
-from harness.intelligence.models.parsing.response.parser import parse_model_response
+from harness.domain.tool_call import ToolCall
+from harness.models.response import ModelResponse
+from harness.models.tool_result_summary import ToolResultSummary
+from harness.parser.response_parser import parse_model_response
 
 IDS = ("bc950638-61a9-4662-a330-76c77c43225d", "99f97142-ae4f-404f-a0f5-81a998a42df6")
 

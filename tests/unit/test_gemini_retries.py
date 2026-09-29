@@ -6,12 +6,12 @@ import httpx
 from google.genai.errors import ClientError, ServerError
 
 from harness.app.cli.main import main
-from harness.app.domain.message import Message
-from harness.app.models.errors import (
+from harness.domain.message import Message
+from harness.models.errors import (
     ModelConnectionError,
     ModelRateLimitError,
 )
-from harness.intelligence.models.providers.google.client.client import GeminiClient
+from harness.providers.google_client import GeminiClient
 
 
 class GeminiRetriesTest(unittest.TestCase):

@@ -24,70 +24,53 @@ caisa_harnes_project/
 ├── pyproject.toml
 ├── scripts/
 ├── src/harness/
-│   ├── application/
-│   │   └── orchestration/
-│   │       ├── engine/{lifecycle/lifecycle.py,loop/loop.py}
-│   │       ├── routing/{dispatcher/dispatcher.py,resolver/resolver.py}
-│   │       └── state/{session/state.py,task/state.py}
 │   ├── app/
-│   │   ├── cli/{main.py,reader.py}
-│   │   ├── builder/model_message_builder.py
-│   │   ├── models/{request.py,response.py,model_client.py,tool_result_summary.py,errors.py,response_instruction.py}
-│   │   ├── loader/command_loader.py
-│   │   ├── parser/command_parser.py
-│   │   ├── resolver/command_resolver.py
-│   │   ├── domain/{command.py,message.py,session.py,tool_call.py,tool_result.py}
-│   │   ├── tools/{tool_registry.py,register_tools.py}
-│   │   ├── orchestrator.py
-│   │   └── session_manager.py
+│   │   └── cli/
+│   │       ├── main.py
+│   │       └── reader.py
+│   ├── builder/
+│   │   ├── model_message_builder.py
+│   │   └── tools_schema_builder.py
+│   ├── contracts/
+│   │   └── tool.py
 │   ├── domain/
-│   │   ├── messages/role/model.py
-│   │   ├── sessions/state/model.py
-│   │   └── tasks/{status/model.py,task/model.py}
-│   ├── execution/
-│   │   ├── tools/
-│   │   │   ├── contracts/tool.py
-│   │   │   ├── filesystem/{edit,read,search,write}/tool.py
-│   │   │   ├── git/{commit,diff,history,status}/tool.py
-│   │   │   ├── registry/schemas/schema.py
-│   │   │   ├── shell/{execution/tool.py,result/model.py}
-│   │   │   └── testing/{result/model.py,runner/tool.py}
-│   │   └── workflows/
-│   │       ├── code_review/{finish,inspect,review,start}/step.py
-│   │       ├── debugging/{diagnose,inspect,repair,verify}/step.py
-│   │       └── feature/{analyze,implement,plan,verify}/step.py
-│   ├── infrastructure/
-│   │   ├── memory/
-│   │   │   ├── persistence/{cache/cache.py,store/store.py}
-│   │   │   ├── project/{reader/reader.py,writer/writer.py}
-│   │   │   └── session/{reader/reader.py,writer/writer.py}
-│   │   ├── observability/
-│   │   │   ├── logging/{events/events.py,logger/logger.py}
-│   │   │   ├── metrics/{collector/collector.py,usage/usage.py}
-│   │   │   └── tracing/{spans/spans.py,tracer/tracer.py}
-│   │   └── security/
-│   │       ├── approvals/{decision/decision.py,request/request.py}
-│   │       └── permissions/{checker/checker.py,rules/rules.py}
-│   └── intelligence/
-│       ├── agents/
-│       │   ├── architect/{decisions/decisions.py,planner/planner.py,runner/runner.py}
-│       │   ├── base/{contract/contract.py,lifecycle/lifecycle.py,state/state.py}
-│       │   ├── coding/{instructions/loader.py,planner/planner.py,runner/runner.py}
-│       │   ├── debugging/{diagnosis/diagnosis.py,repair/repair.py,runner/runner.py}
-│       │   ├── review/{analyzer/analyzer.py,findings/builder.py,runner/runner.py}
-│       │   └── testing/{planner/planner.py,runner/runner.py,verifier/verifier.py}
-│       ├── context/
-│       │   ├── building/{builder/builder.py,instructions/loader.py}
-│       │   ├── compression/{budget/manager.py,summarizer/summarizer.py}
-│       │   ├── retrieval/{files,memory,search}/retriever.py
-│       │   └── window/{manager/manager.py,tokens/counter.py}
-│       └── models/
-│           ├── providers/
-│           │   ├── anthropic/{client/client.py,mapping/mapper.py,tools/mapper.py}
-│           │   ├── google/{client/client.py,mapping/mapper.py}
-│           │   ├── local/{client/client.py,mapping/mapper.py}
-│           │   └── openai/{client/client.py,mapping/mapper.py,tools/mapper.py}
-│           └── routing/{fallback/fallback.py,router/router.py,selector/selector.py,strategy/strategy.py}
+│   │   ├── command.py
+│   │   ├── message.py
+│   │   ├── session.py
+│   │   ├── tool_call.py
+│   │   └── tool_result.py
+│   ├── factory/
+│   │   └── model_client_factory.py
+│   ├── loader/
+│   │   └── command_loader.py
+│   ├── mappers/
+│   │   ├── google_mapper.py
+│   │   └── openai_mapper.py
+│   ├── models/
+│   │   ├── errors.py
+│   │   ├── model_client.py
+│   │   ├── request.py
+│   │   ├── response.py
+│   │   ├── response_instruction.py
+│   │   └── tool_result_summary.py
+│   ├── parser/
+│   │   ├── command_parser.py
+│   │   ├── parse_tool_calls.py
+│   │   └── response_parser.py
+│   ├── providers/
+│   │   ├── anthropic_client.py
+│   │   ├── google_client.py
+│   │   └── openai_client.py
+│   ├── resolver/
+│   │   └── command_resolver.py
+│   ├── tools/
+│   │   ├── bash_tool.py
+│   │   ├── read_file_tool.py
+│   │   ├── register_tools.py
+│   │   ├── tool_registry.py
+│   │   └── write_file_tool.py
+│   ├── orchestrator.py
+│   └── session_manager.py
 └── tests/
     ├── evals/
     ├── integration/
@@ -100,7 +83,8 @@ caisa_harnes_project/
 - `app` owns the CLI, application models and model contracts, command services, active domain models, tool registration, runner, and session manager.
 - `application` contains remaining orchestration scaffolding.
 - `domain` contains remaining role, session-state, and task scaffolding.
-- `intelligence` contains agents, context management, and model integrations.
+- `providers` contains the Gemini and OpenAI clients and an empty Anthropic client placeholder.
+- `mappers` contains separate Google and OpenAI message mappings.
 - `execution` contains executable tools and workflow steps.
 - `infrastructure` contains persistence, observability, and security adapters.
 - `tests` separates unit, integration, and evaluation coverage.
@@ -127,18 +111,17 @@ agent, workflow, API, infrastructure, and tool modules are currently empty.
 | `Session` | `app/domain/session.py` | Mutable in-memory conversation with a generated UUID and ordered messages. It is created once per `Runner`; there is no persistence or reset behavior yet. |
 | `ToolCall` | `app/domain/tool_call.py` | Immutable name-and-arguments representation for a future model-requested tool call. It is not connected to the model loop yet. |
 | `ModelClient` | `app/models/model_client.py` | Provider-neutral protocol requiring `generate(messages) -> str`. This is the boundary used by `Runner`. |
-| `create_model_client()` | `intelligence/models/routing/selector/selector.py` | Selects Gemini for `google`/`gemini` (the default) or OpenAI for `openai`, using `MODEL_PROVIDER`. Other values fail immediately. |
-| `GeminiClient` | `intelligence/models/providers/google/client/client.py` | Reads `GEMINI_API_KEY` and optional `GEMINI_MODEL`, maps messages to the Google SDK, calls `generate_content`, and converts HTTP 429 errors into `ModelRateLimitError`. |
-| Google `map_messages()` | `intelligence/models/providers/google/mapping/mapper.py` | Converts assistant messages to Gemini's `model` role, keeps user messages as `user`, and combines all system messages into one system instruction. |
-| `OpenAIClient` | `intelligence/models/providers/openai/client/client.py` | Uses the OpenAI Responses API and optional `OPENAI_MODEL`, maps the session messages, and returns `response.output_text`. |
-| OpenAI `map_messages()` | `intelligence/models/providers/openai/mapping/mapper.py` | Converts domain messages into dictionaries containing `role` and `content`. |
+| `create_model_client()` | `factory/model_client_factory.py` | Selects Gemini for `google`/`gemini` (the default) or OpenAI for `openai`, using `MODEL_PROVIDER`. Other values fail immediately. |
+| `GeminiClient` | `providers/google_client.py` | Reads `GEMINI_API_KEY` and optional `GEMINI_MODEL`, maps messages to the Google SDK, calls `generate_content`, and converts HTTP 429 errors into `ModelRateLimitError`. |
+| Google `map_messages()` | `mappers/google_mapper.py` | Converts assistant messages to Gemini's `model` role, keeps user messages as `user`, and combines all system messages into one system instruction. |
+| `OpenAIClient` | `providers/openai_client.py` | Uses the OpenAI Responses API and optional `OPENAI_MODEL`, maps the session messages, and returns `response.output_text`. |
+| OpenAI `map_messages()` | `mappers/openai_mapper.py` | Converts domain messages into dictionaries containing `role` and `content`. |
 | `ModelRateLimitError` | `app/models/errors.py` | Provider-neutral error currently used for Gemini quota/rate-limit failures and handled by the packaged CLI. |
-| `Tool` | `execution/tools/contracts/tool.py` | Protocol for named tools with a description and `execute(arguments) -> str`. |
+| `Tool` | `contracts/tool.py` | Protocol for named tools with a description and `execute(arguments) -> str`. |
 | `ToolRegistry` | `app/tools/tool_registry.py` | Registers unique tools, resolves tools by name, executes them, and lists registered instances. |
 | `register_tools()` | `app/tools/register_tools.py` | Registers `ReadFileTool` and `WriteFileTool` in each `Runner`. |
-| `ReadFileTool` | `execution/tools/filesystem/read/tool.py` | Validates a string path, requires an existing file, and returns its UTF-8 text. The runner uses it internally to load command files. |
-| `WriteFileTool` | `execution/tools/filesystem/write/tool.py` | Validates path/content strings, creates parent directories, writes UTF-8 text, and returns a success message. It is registered but cannot currently be invoked by a model response. |
-| `CAISAPromptLoader` | `intelligence/context/building/instructions/loader.py` | Reads `.caisa/CAISA.md`, returning an empty string if absent. It exists but is not currently used by `Runner`, so the project instructions are not sent to the model. |
+| `ReadFileTool` | `tools/read_file_tool.py` | Validates a string path, requires an existing file, and returns its UTF-8 text. The runner uses it internally to load command files. |
+| `WriteFileTool` | `tools/write_file_tool.py` | Validates path/content strings, creates parent directories, writes UTF-8 text, and returns a success message. It is registered but cannot currently be invoked by a model response. |
 | `read_input()` | `app/cli/reader.py` | Reads and trims one terminal message. EOF or Ctrl+C is converted into `exit`. |
 | CLI `main()` | `app/cli/main.py` | Loads `.env`, creates the selected model and runner, runs the prompt loop, stops on `exit`, and reports model rate-limit errors without ending the process. |
 
@@ -235,8 +218,7 @@ sequenceDiagram
 ### Scaffolded but not implemented
 
 - Agent types (`coding`, `review`, `testing`, `debugging`, and `architect`).
-- Context building, retrieval, compression, token counting, and window control,
-  except for the unused `CAISAPromptLoader`.
+- Context building, retrieval, compression, token counting, and window control.
 - Feature, debugging, and code-review workflow steps.
 - Shell, Git, testing, search, and edit tools.
 - Memory persistence, project/session storage, logs, metrics, and tracing.

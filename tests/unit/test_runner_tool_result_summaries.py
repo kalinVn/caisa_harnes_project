@@ -1,14 +1,14 @@
 import unittest
 from unittest.mock import Mock, patch
 
-from harness.app.orchestrator import Runner
-from harness.app.session_manager import SessionManager
-from harness.app.models.request import Request
-from harness.app.domain.message import Message
-from harness.app.domain.tool_call import ToolCall
-from harness.app.domain.tool_result import ToolResult
-from harness.app.models.response import ModelResponse
-from harness.app.models.tool_result_summary import ToolResultSummary
+from harness.orchestrator import Runner
+from harness.session_manager import SessionManager
+from harness.models.request import Request
+from harness.domain.message import Message
+from harness.domain.tool_call import ToolCall
+from harness.domain.tool_result import ToolResult
+from harness.models.response import ModelResponse
+from harness.models.tool_result_summary import ToolResultSummary
 
 
 class RunnerToolResultSummariesTest(unittest.TestCase):
