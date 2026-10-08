@@ -35,6 +35,4 @@ class ReadFileTool:
                 f"File not found: {path}"
             )
 
-        return path.read_text(
-            encoding="utf-8"
-        )
+        return path.read_text(encoding="utf-8")

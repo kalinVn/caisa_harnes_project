@@ -38,13 +38,9 @@ class SessionManager:
     def create_session(
         self,
     ) -> Session:
-        system_prompt = (
-            self._load_system_prompt()
-        )
+        system_prompt =  self._load_system_prompt()
 
-        tools_context = (
-            self._build_tools_context()
-        )
+        tools_context = self._build_tools_context()
 
         session = Session(
             messages=[
@@ -122,19 +118,14 @@ class SessionManager:
         return self._tool_registry.execute(
             "read_file",
             {
-                "path": str(
-                    system_prompt_path
-                ),
+                "path": str(system_prompt_path),
             },
         )
 
     def _build_tools_context(
         self,
     ) -> str:
-        tools = (
-            self._tool_registry.list_tools()
-        )
+        
+        tools = self._tool_registry.list_tools()
 
-        return build_tools_schema(
-            tools
-        )
+        return build_tools_schema(tools)

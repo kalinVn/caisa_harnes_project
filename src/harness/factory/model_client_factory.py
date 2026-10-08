@@ -8,6 +8,10 @@ from harness.providers.openai_client import (
     OpenAIClient,
 )
 
+from harness.providers.groq_client import (
+    GroqClient,
+)
+
 
 def create_model_client() -> ModelClient:
     provider = os.getenv(
@@ -20,6 +24,9 @@ def create_model_client() -> ModelClient:
 
     if provider == "openai":
         return OpenAIClient()
+
+    if provider == "groq":
+        return GroqClient()
 
     raise ValueError(
         f"Unsupported MODEL_PROVIDER: {provider}"

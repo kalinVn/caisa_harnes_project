@@ -80,6 +80,12 @@ class GeminiClient:
                 config=config,
             )
         except ClientError as error:
+            if error.code == 404:
+                raise ModelConnectionError(
+                    f"Gemini model '{self._model}' was not found or does not support "
+                    "generateContent. Check GEMINI_MODEL in .env against the models "
+                    "available to your API key, then restart the harness."
+                ) from error
             if error.code != 429:
                 raise
 

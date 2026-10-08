@@ -80,3 +80,14 @@ class GeminiRetriesTest(unittest.TestCase):
         self.assertIn("Gemini is temporarily unavailable.", stdout.getvalue())
         self.assertIn("Harness > Done", stdout.getvalue())
         self.assertIn("AI Harness stopped.", stdout.getvalue())
+
+    @patch("tenacity.nap.time.sleep")
+    @patch("httpx.Client.send")
+    def test_missing_model_reports_configuration_error_without_retry(self, send, sleep):
+        self.client._model = "djemini"
+        send.return_value = self.response(404)
+        with self.assertRaisesRegex(ModelConnectionError, "djemini.*GEMINI_MODEL") as caught:
+            self.client.generate(self.messages)
+        self.assertIsInstance(caught.exception.__cause__, ClientError)
+        send.assert_called_once()
+        sleep.assert_not_called()
