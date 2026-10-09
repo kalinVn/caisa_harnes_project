@@ -20,6 +20,16 @@ class ModelResponseParserTest(unittest.TestCase):
             text="Finished.", tool_calls=[], tool_result_summaries=[]
         ))), ModelResponse(text="Finished."))
 
+    def test_optional_tool_result_output_requests(self):
+        parsed = parse_model_response(json.dumps(dict(
+            text="",
+            tool_calls=[],
+            tool_result_summaries=[],
+            tool_result_output_requests=list(IDS),
+        )))
+
+        self.assertEqual(parsed.tool_result_output_requests, list(IDS))
+
     def test_one_and_multiple_calls_with_empty_text_and_summaries(self):
         calls = [dict(tool="read_file", arguments={"path": "a.py"}),
                  dict(tool="bash", arguments={"command": "pwd", "nested": [None, True, {"x": 1}]})]
@@ -51,6 +61,8 @@ class ModelResponseParserTest(unittest.TestCase):
         for field in ("tool_calls", "tool_result_summaries"):
             for value in (None, "", {}, True, 1):
                 invalid.append({**valid, field: value})
+        for value in (None, "", {}, True, 1, [None], [1], [""]):
+            invalid.append({**valid, "tool_result_output_requests": value})
         for call in (None, [], "x", {}, {"tool": "x"},
                      {"tool": 1, "arguments": {}}, {"tool": " ", "arguments": {}},
                      *({"tool": "x", "arguments": x} for x in (None, [], "", 1, True))):

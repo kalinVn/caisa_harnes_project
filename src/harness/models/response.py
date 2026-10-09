@@ -9,3 +9,4 @@ class ModelResponse:
     text: str = ""
     tool_calls: list[ToolCall] = field(default_factory=list)
     tool_result_summaries: list[ToolResultSummary] = field(default_factory=list)
+    tool_result_output_requests: list[str] = field(default_factory=list)

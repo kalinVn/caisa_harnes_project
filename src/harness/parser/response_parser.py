@@ -61,7 +61,18 @@ def parse_model_response(text: str) -> ModelResponse:
             f"at line {error.lineno}, column {error.colno} (char {error.pos})"
         ) from error
     _finite_numbers(data)
-    _fields(data, ("text", "tool_calls", "tool_result_summaries"), "response")
+    required_fields = {"text", "tool_calls", "tool_result_summaries"}
+    allowed_fields = required_fields | {"tool_result_output_requests"}
+    if (
+        not isinstance(data, dict)
+        or not required_fields.issubset(data)
+        or not set(data).issubset(allowed_fields)
+    ):
+        raise ValueError(
+            "response must contain text, tool_calls, and "
+            "tool_result_summaries, with optional "
+            "tool_result_output_requests"
+        )
     response_text = _string(data["text"], "text")
     for field in ("tool_calls", "tool_result_summaries"):
         if not isinstance(data[field], list):
@@ -84,4 +95,22 @@ def parse_model_response(text: str) -> ModelResponse:
             id=_string(summary["id"], f"{path}.id", nonempty=True),
             summary=_string(summary["summary"], f"{path}.summary"),
         ))
-    return ModelResponse(response_text, calls, summaries)
+    output_requests_data = data.get("tool_result_output_requests", [])
+    if not isinstance(output_requests_data, list):
+        raise ValueError("tool_result_output_requests must be an array")
+
+    output_requests = [
+        _string(
+            result_id,
+            f"tool_result_output_requests[{index}]",
+            nonempty=True,
+        )
+        for index, result_id in enumerate(output_requests_data)
+    ]
+
+    return ModelResponse(
+        text=response_text,
+        tool_calls=calls,
+        tool_result_summaries=summaries,
+        tool_result_output_requests=output_requests,
+    )

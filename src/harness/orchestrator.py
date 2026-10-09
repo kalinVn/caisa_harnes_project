@@ -149,6 +149,9 @@ class Orchestrator:
             assistant_message = Message(
                 role="assistant",
                 content=response_text,
+                tool_result_output_requests=tuple(
+                    response.tool_result_output_requests
+                ),
             )
 
             session.add_message(assistant_message)
@@ -160,6 +163,9 @@ class Orchestrator:
                 role="assistant",
                 content=build_tool_calls_context(
                     response.tool_calls
+                ),
+                tool_result_output_requests=tuple(
+                    response.tool_result_output_requests
                 ),
             )
         )
@@ -195,4 +201,5 @@ class Orchestrator:
             )
         )
 
+        # TODO: Continue the current model turn with the updated session messages.
         return response.text

@@ -1,11 +1,17 @@
 MODEL_RESPONSE_INSTRUCTION = """
 Always respond with a valid JSON object containing
-exactly these three fields:
+these three required fields:
 
 {
   "text": "",
   "tool_calls": [],
   "tool_result_summaries": []
+}
+
+You may also include this optional field:
+
+{
+  "tool_result_output_requests": []
 }
 
 Rules:
@@ -22,10 +28,15 @@ Rules:
 4. Never invent tool result IDs or claim that
    an unexecuted tool has completed.
 
-5. Use empty arrays when there are no tool calls
+5. To request the complete output for a summarized tool
+   result, put its original ID in
+   "tool_result_output_requests". Omit this optional field
+   when no complete outputs are needed.
+
+6. Use empty arrays when there are no tool calls
    or summaries.
 
-6. Return JSON only, without Markdown code fences
+7. Return JSON only, without Markdown code fences
    or explanatory text outside the JSON.
 """.strip()
 

@@ -3,14 +3,18 @@ from copy import deepcopy
 from unittest.mock import Mock, patch
 from uuid import UUID
 
-from harness.orchestrator import Orchestrator
-from harness.session_manager import SessionManager
-from harness.models.request import Request
+from harness.builder.model_message_builder import ModelMessageBuilder
+from harness.builder.tool_result_context_builder import (
+    TOOL_RESULTS_CONTEXT_FOOTER,
+    TOOL_RESULTS_CONTEXT_HEADER,
+)
 from harness.domain.message import Message
 from harness.domain.tool_call import ToolCall
 from harness.domain.tool_result import ToolResult
-from harness.builder.model_message_builder import ModelMessageBuilder
+from harness.models.request import Request
 from harness.models.response import ModelResponse
+from harness.orchestrator import Orchestrator
+from harness.session_manager import SessionManager
 
 
 class ModelMessageBuilderTest(unittest.TestCase):
@@ -47,10 +51,14 @@ class ModelMessageBuilderTest(unittest.TestCase):
         self.assertEqual(model_messages[3].tool_results, ())
         self.assertIn(results[0].summary, model_messages[3].content)
         self.assertIn(results[1].summary, model_messages[3].content)
+        self.assertIn(results[0].id, model_messages[3].content)
+        self.assertIn(results[1].id, model_messages[3].content)
         self.assertNotIn(messages[3].content, model_messages[3].content)
         for result in results:
             self.assertNotIn(result.output, model_messages[3].content)
         self.assertEqual(messages[3].tool_results, results)
+        self.assertEqual(model_messages[3].content.count(TOOL_RESULTS_CONTEXT_HEADER), 1)
+        self.assertEqual(model_messages[3].content.count(TOOL_RESULTS_CONTEXT_FOOTER), 1)
 
     def test_compose_handles_summarized_and_unsummarized_results_without_mutation(self):
         summarized = ToolResult("read_file", "already summarized output", "Read configuration.")
@@ -86,6 +94,25 @@ class ModelMessageBuilderTest(unittest.TestCase):
         self.assertEqual(message.content, "Original history")
         self.assertEqual(unsummarized.summary, "")
         self.assertEqual(model_messages[0].tool_results, ())
+
+    def test_whitespace_summary_is_treated_as_missing_and_preserved(self):
+        result = ToolResult(
+            "bash",
+            "complete command output",
+            "  \n\t",
+            id="whitespace-summary-id",
+        )
+        message = Message(role="user", content="Original history", tool_results=(result,))
+
+        model_messages = ModelMessageBuilder().compose_model_messages([message])
+
+        self.assertEqual(len(model_messages), 2)
+        self.assertIn(result.output, model_messages[0].content)
+        self.assertIn(result.id, model_messages[0].content)
+        self.assertIn(result.id, model_messages[1].content)
+        self.assertEqual(result.summary, "  \n\t")
+        self.assertEqual(message.content, "Original history")
+        self.assertIs(message.tool_results[0], result)
 
     def test_runner_keeps_and_sends_unsummarized_results_across_turns(self):
         for success in (True, False):

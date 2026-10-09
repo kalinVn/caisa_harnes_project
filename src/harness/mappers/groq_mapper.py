@@ -14,7 +14,9 @@ When invoking a function, leave message content empty.
 
 When answering the user without a function call, return only this JSON object:
 {"text":"Your actual answer","tool_calls":[],"tool_result_summaries":[]}
-All three fields are required; no other fields or Markdown fences are allowed.
+All three fields are required. The optional tool_result_output_requests field
+is an array of original tool result ID strings whose complete outputs you need.
+No other fields or Markdown fences are allowed.
 The text field is a string. The tool_calls field in content is always empty.
 The tool_result_summaries array contains objects with exactly id and summary,
 both strings. Use only original IDs from actual previously executed results.
@@ -123,4 +125,9 @@ def map_response(message, tools: list[dict]) -> ModelResponse:
         if len(parsed.tool_calls) != 1 or parsed.tool_calls[0].name != call.function.name:
             raise ValueError("Groq tool arguments contain an invalid call envelope")
         calls.extend(parsed.tool_calls)
-    return ModelResponse(response.text, calls, response.tool_result_summaries)
+    return ModelResponse(
+        text=response.text,
+        tool_calls=calls,
+        tool_result_summaries=response.tool_result_summaries,
+        tool_result_output_requests=response.tool_result_output_requests,
+    )

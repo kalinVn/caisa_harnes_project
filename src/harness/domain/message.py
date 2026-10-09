@@ -12,3 +12,4 @@ class Message:
     role: MessageRole
     content: str
     tool_results: tuple[ToolResult, ...] = ()
+    tool_result_output_requests: tuple[str, ...] = ()
