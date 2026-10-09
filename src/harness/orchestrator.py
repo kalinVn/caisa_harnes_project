@@ -8,7 +8,7 @@ from harness.parser.command_response_parser import parse_command_response
 
 from harness.builder.tool_result_context_builder import build_tool_results_context
 
-from harness.loader.command_context_loader import load_command_context
+from harness.loader.command_context_loader import get_command_message_obj
 
 from harness.loader.command_loader import (
     CommandLoader,
@@ -90,22 +90,29 @@ class Orchestrator:
         parsed_command = parse_command(request.message)
 
         command_message = None
-        turn_messages: list[Message] = []
+
+        # Добавяме системно съобщение само за текущия ход, което указва на модела как да форматира 
+        # финалния отговор при команда. Това съобщение не се записва в историята на сесията и важи 
+        # само за конкретното извикване
+        # Може да добавим – например, при команда за създаване на файл, инструктираме модела 
+        # финалният отговор да е  JSON с полета answer и command_summary. Това важи само за този ход
+        # и не променя историята
+        response_format_instruction: list[Message] = []
 
         if parsed_command is not None:
-            command_message = load_command_context(
+            command_message = get_command_message_obj(
                 parsed_command.name,
                 command_resolver=self._command_resolver,
                 tool_registry=self._tool_registry,
                 command_loader=self._command_loader,
             )
 
-            turn_messages.append(
+            response_format_instruction.append(
                 build_command_response_format_context()
             )
 
-        model_messages = self._model_messages_builder.build(
-            session.messages + turn_messages
+        model_messages = self._model_messages_builder.compose_model_messages(
+            session.messages + response_format_instruction
         )
 
         if command_message is not None:
@@ -183,9 +190,7 @@ class Orchestrator:
         session.add_message(
             Message(
                 role="user",
-                content=build_tool_results_context(
-                    tool_results
-                ),
+                content=build_tool_results_context(tool_results),
                 tool_results=tuple(tool_results),
             )
         )

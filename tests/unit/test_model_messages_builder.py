@@ -24,7 +24,7 @@ class ModelMessageBuilderTest(unittest.TestCase):
         first.summary = "Read configuration."
         self.assertEqual(first.summary, "Read configuration.")
 
-    def test_build_preserves_history_and_replaces_only_tool_results(self):
+    def test_compose_preserves_history_and_replaces_only_tool_results(self):
         results = (
             ToolResult("read_file", "full file contents", "Read config.py successfully."),
             ToolResult("bash", "full error output", "bash failed.", success=False),
@@ -37,7 +37,7 @@ class ModelMessageBuilderTest(unittest.TestCase):
         ]
         original = deepcopy(messages)
 
-        model_messages = ModelMessageBuilder().build(messages)
+        model_messages = ModelMessageBuilder().compose_model_messages(messages)
 
         self.assertIsNot(model_messages, messages)
         self.assertEqual(len(model_messages), len(messages))
@@ -52,7 +52,7 @@ class ModelMessageBuilderTest(unittest.TestCase):
             self.assertNotIn(result.output, model_messages[3].content)
         self.assertEqual(messages[3].tool_results, results)
 
-    def test_build_handles_summarized_and_unsummarized_results_without_mutation(self):
+    def test_compose_handles_summarized_and_unsummarized_results_without_mutation(self):
         summarized = ToolResult("read_file", "already summarized output", "Read configuration.")
         unsummarized = ToolResult("bash", "complete command output")
         another_result = ToolResult("read_file", "another full output")
@@ -61,7 +61,7 @@ class ModelMessageBuilderTest(unittest.TestCase):
         messages = [message, another_message, Message(role="assistant", content="Continuing")]
         original = deepcopy(messages)
 
-        model_messages = ModelMessageBuilder().build(messages)
+        model_messages = ModelMessageBuilder().compose_model_messages(messages)
 
         content = model_messages[0].content
         self.assertIn(summarized.summary, content)
@@ -135,7 +135,7 @@ class ModelMessageBuilderTest(unittest.TestCase):
             runner = Orchestrator(client)
         runner._tool_registry.execute = Mock(return_value="full configuration")
 
-        with patch("harness.orchestrator.load_command_context", return_value=command_context):
+        with patch("harness.orchestrator.get_command_message_obj", return_value=command_context):
             self.assertEqual(runner.handle(Request.create("execute command review")), "Done")
 
         first_messages = client.generate.call_args_list[0].args[0]

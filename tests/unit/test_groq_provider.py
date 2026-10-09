@@ -130,7 +130,7 @@ class GroqProviderTest(unittest.TestCase):
         result = ToolResult(name='read_file', output='Example contents')
         self.messages += [Message(role='assistant', content='Raw tool calls:\n[]'),
                           Message(role='user', content='', tool_results=(result,))]
-        self.messages = ModelMessageBuilder().build(self.messages)
+        self.messages = ModelMessageBuilder().compose_model_messages(self.messages)
         response = self.reply(envelope('Done', [{'id': result.id, 'summary': 'Read contents'}]))
         self.assertEqual(response.tool_result_summaries[0].id, result.id)
         sent = self.create.call_args.kwargs['messages']
