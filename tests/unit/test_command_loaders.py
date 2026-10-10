@@ -59,6 +59,13 @@ Second line
             Message(
                 role="system",
                 content=(
+                    "Harness command definition follows. The command name "
+                    "selects this definition; it is not a shell command and "
+                    "must never be passed to the bash tool. Follow the "
+                    "Instructions section exactly. For bash, execute only the "
+                    "shell command explicitly stated in Instructions. If a "
+                    "matching tool result is already present, do not repeat "
+                    "the tool call; use that result to finish the command.\n\n"
                     "Executing command: example\n\n"
                     "Description:\nExample description"
                 ),

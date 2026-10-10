@@ -8,6 +8,9 @@ import httpx
 from openai import APIConnectionError, APIStatusError, RateLimitError
 
 from harness.builder.model_message_builder import ModelMessageBuilder
+from harness.builder.command_response_format_context_builder import (
+    build_command_response_format_context,
+)
 from harness.builder.tools_schema_builder import build_tools_schema
 from harness.domain.message import Message
 from harness.domain.tool_call import ToolCall
@@ -125,6 +128,50 @@ class GroqProviderTest(unittest.TestCase):
         self.create.return_value = SimpleNamespace(choices=[])
         with self.assertRaisesRegex(ValueError, 'no response choices'):
             self.client.generate(self.messages)
+
+    def test_invalid_response_is_retried_with_format_correction(self):
+        invalid = SimpleNamespace(choices=[SimpleNamespace(
+            finish_reason='stop',
+            message=SimpleNamespace(content='plain text', tool_calls=None),
+        )])
+        valid = SimpleNamespace(choices=[SimpleNamespace(
+            finish_reason='stop',
+            message=SimpleNamespace(content=envelope('Done'), tool_calls=None),
+        )])
+        self.create.side_effect = [invalid, valid]
+
+        self.assertEqual(self.client.generate(self.messages), ModelResponse(text='Done'))
+
+        self.assertEqual(self.create.call_count, 2)
+        retry_messages = self.create.call_args_list[1].kwargs['messages']
+        self.assertIn('previous response was invalid', retry_messages[-1]['content'])
+        self.assertEqual(retry_messages[-1]['role'], 'system')
+        self.assertIn('native function call', retry_messages[-1]['content'])
+        self.assertEqual(self.create.call_args_list[1].kwargs['temperature'], 0)
+
+    def test_direct_command_json_is_retried_with_outer_envelope_example(self):
+        self.messages.append(build_command_response_format_context())
+        inner = json.dumps({
+            'answer': 'Done',
+            'command_summary': 'The command completed.',
+        })
+        invalid = SimpleNamespace(choices=[SimpleNamespace(
+            finish_reason='stop',
+            message=SimpleNamespace(content=inner, tool_calls=None),
+        )])
+        valid = SimpleNamespace(choices=[SimpleNamespace(
+            finish_reason='stop',
+            message=SimpleNamespace(content=envelope(inner), tool_calls=None),
+        )])
+        self.create.side_effect = [invalid, valid]
+
+        self.assertEqual(self.client.generate(self.messages).text, inner)
+
+        retry_instruction = (
+            self.create.call_args_list[1].kwargs['messages'][-1]['content']
+        )
+        self.assertIn('command_summary', retry_instruction)
+        self.assertIn('outer JSON shape', retry_instruction)
 
     def test_result_history_and_original_ids_survive_next_turn(self):
         result = ToolResult(name='read_file', output='Example contents')

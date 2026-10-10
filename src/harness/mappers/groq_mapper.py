@@ -18,6 +18,9 @@ All three fields are required. The optional tool_result_output_requests field
 is an array of original tool result ID strings whose complete outputs you need.
 No other fields or Markdown fences are allowed.
 The text field is a string. The tool_calls field in content is always empty.
+When no native function call is emitted, the text field must not be empty.
+If an earlier command instruction requires answer and command_summary, encode
+that two-field JSON object inside text exactly as instructed.
 The tool_result_summaries array contains objects with exactly id and summary,
 both strings. Use only original IDs from actual previously executed results.
 If there are no results to summarize, use an empty array. Never invent results.
