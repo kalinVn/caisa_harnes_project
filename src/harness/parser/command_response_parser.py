@@ -1,33 +1,23 @@
 import json
 
 
-def parse_command_response(
-    response_text: str,
-) -> tuple[str, str]:
+def parse_command_response(response_text: str) -> tuple[str, str] | None:
+    """Parse a command reply, or return None if its expected JSON format is invalid."""
     try:
         payload = json.loads(response_text)
-    except json.JSONDecodeError as error:
-        raise ValueError(
-            "Command response did not follow the required "
-            "JSON format."
-        ) from error
+    except json.JSONDecodeError:
+        return None
 
     if not isinstance(payload, dict):
-        raise ValueError(
-            "Command response must be a JSON object."
-        )
+        return None
 
     answer = payload.get("answer")
     summary = payload.get("command_summary")
 
     if not isinstance(answer, str):
-        raise ValueError(
-            "Command response is missing a string answer."
-        )
+        return None
 
     if not isinstance(summary, str) or not summary.strip():
-        raise ValueError(
-            "Command response is missing a command summary."
-        )
+        return None
 
     return answer, summary.strip()
