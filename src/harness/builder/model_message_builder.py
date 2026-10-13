@@ -1,3 +1,5 @@
+from dataclasses import replace
+
 from harness.builder.tool_result_context_builder import (
     build_tool_results_context,
     has_tool_result_summary,
@@ -29,6 +31,42 @@ class ModelMessageBuilder:
         return model_messages
 
 
+    # Обновява само контекстите с изрично поискани пълни tool outputs.
+    # Оригиналните съобщения от сесията остават непроменени.
+    def update_model_messages_by_tool_result_output_requests_ids(
+        self,
+        model_messages: list[Message],
+        tool_result_output_requests: list[str],
+    ) -> list[Message]:
+        if not tool_result_output_requests:
+            return model_messages
+
+        updated_model_messages: list[Message] = []
+        model_messages_updated = False
+
+        for message in model_messages:
+
+            if  not message.has_tool_results() or not message.has_requested_tool_results(tool_result_output_requests):
+               
+                updated_model_messages.append(message)
+                continue
+
+            updated_content = build_tool_results_context(list(message.tool_results), tool_result_output_requests)
+
+            if updated_content == message.content:
+                updated_model_messages.append(message)
+                continue
+
+            updated_model_messages.append(replace(message, content=updated_content))
+            
+            model_messages_updated = True
+
+        if not model_messages_updated:
+            return model_messages
+
+        return updated_model_messages
+
+
     # Обхожда всички съобщения и проверява дали съдържат tool_results.
     # Ако има tool_results, обхожда всеки ToolResult.
     # Ако ToolResult има валидно summary, използва него вместо пълния output.
@@ -45,7 +83,7 @@ class ModelMessageBuilder:
         tool_result_ids_to_summarize: list[str] = []
 
         for message in messages:
-            if message.tool_results:
+            if message.has_tool_results():
                 for tool_result in message.tool_results:
                     if not has_tool_result_summary(tool_result):
                         tool_result_ids_to_summarize.append(tool_result.id)
@@ -56,6 +94,7 @@ class ModelMessageBuilder:
                         content=build_tool_results_context(
                             list(message.tool_results),
                         ),
+                        tool_results=message.tool_results,
                     )
                 )
             else:

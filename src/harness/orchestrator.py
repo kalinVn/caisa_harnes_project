@@ -38,10 +38,10 @@ from harness.models.model_client import (
 )
 from harness.models.response import ModelResponse
 
+
 class Orchestrator:
     MAX_TOOL_STEPS = 20
     MAX_COMMAND_RESPONSE_RETRIES = 2
-
     def __init__(
         self,
         model_client: ModelClient,
@@ -77,10 +77,12 @@ class Orchestrator:
     ) -> str:
         if not request.message.strip():
             return "Please enter a message."
+        
         session = self._session_manager.current_session
         user_message = Message(role="user", content=request.message)
         session.add_message(user_message)
         parsed_command = parse_command(request.message)
+
         # Подготвя съобщенията за модела, добавя временни инструкции и контекст за команда,
         # без да променя историята на сесията.
         model_messages = self._create_model_messages(
@@ -92,7 +94,29 @@ class Orchestrator:
         while True:
             response = self._model_client.generate(model_messages)
             session.apply_tool_result_summaries(response.tool_result_summaries)
+            requested_tool_result_ids: list[str] = []
+            
+            for result_id in response.tool_result_output_requests:
+                tool_result = session.get_tool_result_by_id(result_id)
+                if tool_result is not None:
+                    requested_tool_result_ids.append(tool_result.id)
+
             if not response.tool_calls:
+                if requested_tool_result_ids:
+                    updated_model_messages = (
+                        self._model_messages_builder
+                        .update_model_messages_by_tool_result_output_requests_ids(
+                            model_messages=model_messages,
+                            tool_result_output_requests=(
+                                requested_tool_result_ids
+                            ),
+                        )
+                    )
+
+                    if updated_model_messages is not model_messages:
+                        model_messages = updated_model_messages
+                        continue
+
                 # str: финален отговор към потребителя, напр. "Файлът е прочетен успешно."
                 # list[Message]: нов контекст с инструкция за поправка на JSON;
                 # изпращаме го на модела при следващата итерация.
@@ -101,30 +125,33 @@ class Orchestrator:
                     response,
                     parsed_command,
                     command_response_retries,
+                    model_messages
                 )
+
                 if isinstance(result, str):
                     return result
+                
                 command_response_retries += 1
                 model_messages = result
+
                 continue
+
             if tool_steps >= self.MAX_TOOL_STEPS:
+
                 message = "Maximum tool execution steps exceeded."
                 session.add_message(Message(role="assistant", content=message))
+
                 return message
+            
             session.add_message(
                 Message(
                     role="assistant",
-                    content=build_tool_calls_context(
-                        response.tool_calls
-                    ),
-                    tool_result_output_requests=tuple(
-                        response.tool_result_output_requests
-                    ),
+                    content=build_tool_calls_context(response.tool_calls),
                 )
             )
-            tool_results = self._execute_tool_calls(
-                response.tool_calls
-            )
+
+            tool_results = self._execute_tool_calls(response.tool_calls)
+
             session.add_message(
                 Message(
                     role="user",
@@ -132,11 +159,22 @@ class Orchestrator:
                     tool_results=tuple(tool_results),
                 )
             )
+
             tool_steps += 1
+            
             model_messages = self._create_model_messages(
                 session.messages,
                 parsed_command,
             )
+
+            if requested_tool_result_ids:
+                model_messages = (self._model_messages_builder.update_model_messages_by_tool_result_output_requests_ids(
+                        model_messages=model_messages,
+                        tool_result_output_requests=(
+                            requested_tool_result_ids
+                        )
+                    )
+                )
 
     def _handle_response_without_tool_calls(
         self,
@@ -144,20 +182,38 @@ class Orchestrator:
         response: ModelResponse,
         parsed_command: ParsedCommand | None,
         command_response_retries: int,
+        model_messages: list[Message]
     ) -> str | list[Message]:
-        #Проверяваме дали имаме изобщо команда
+        # Проверяваме дали имаме изобщо команда
+        # Ako parsed_command е None, просто записваме текста , без да се занимаваме с нищо друго
         if parsed_command is None:
-            return self._add_message_without_tool_calls(session, response)
-        
+            self._add_response_message(session, response)
+            return response.text
+
+
+        #Проверява дали парснатият респонс връща очаквания резултат. 
+        # Ако искаш, мога да предложа и по-формално или по-стегнато обяснение.
+        #Пример: ако респонсът е JSON с поле status: "ok", парсваме респонса и проверяваме, 
+        # че status е точно "ok", а не "error
         parsed_response = parse_command_response(response.text)
 
+        # Ako parsed_response е None, т.е има грешка в парсването , примерно не е върнал правилния output
+        #  тогава добавяме към session messages нов message в който казваме на модела че не е върнал правилния
+        #  резултат
         if parsed_response is not None:
+
             answer, command_summary = parsed_response
 
-            return self._add_message_without_tool_calls(
-                session, response, parsed_command, answer, command_summary
-            )
-        
+            # Записваме command_summary като системно съобщение
+            self._add_command_summary_message(session, parsed_command, command_summary)
+
+            # ЗФиналния текст който потребителя трябва да чуе
+            return answer
+
+        # Ако сме изчерпали всички опити за поправяне на отговора,
+        # записваме съобщението в историята и връщаме текста към потребителя
+        # връщаме стринг message и добавяме в Message(role="assistant", content=message)
+        #  в session messages
         if command_response_retries >= self.MAX_COMMAND_RESPONSE_RETRIES:
             message = (
                 "Command response remained invalid after "
@@ -167,8 +223,8 @@ class Orchestrator:
             session.add_message(Message(role="assistant", content=message))
 
             return message
-        
-        model_messages = self._create_model_messages(session.messages, parsed_command)
+
+
         model_messages.append(build_command_response_retry_context())
 
         return model_messages
@@ -227,34 +283,29 @@ class Orchestrator:
             model_messages.append(command_message)
         return model_messages
 
-    def _add_message_without_tool_calls(
-        self,
-        session: Session,
-        response: ModelResponse,
-        parsed_command: ParsedCommand | None = None,
-        answer: str | None = None,
-        command_summary: str | None = None,
-    ) -> str:
-        """Save the final assistant response and, for commands, its summary."""
-        response_text = response.text if parsed_command is None else answer
-        assert response_text is not None
-        if parsed_command is not None:
-            # Validated and parsed once by _handle_response_without_tool_calls.
-            session.add_message(
-                Message(
-                    role="system",
-                    content=(
-                        "Command execution summary: "
-                        f"{parsed_command.name} was executed. Result: "
-                        f"{command_summary}"
-                    ),
-                )
-            )
+    def _add_response_message(self, session: Session, response: ModelResponse) -> None:
+        """Записва обикновен финален отговор, без команда. И добавя """
+
         session.add_message(
             Message(
                 role="assistant",
-                content=response_text,
-                tool_result_output_requests=tuple(response.tool_result_output_requests),
+                content=response.text,
             )
         )
-        return response_text
+    def _add_command_summary_message(
+        self,
+        session: Session,
+        parsed_command: ParsedCommand,
+        command_summary: str,
+    ) -> None:
+        """Записва вече валидиран команден отговор и неговото обобщение."""
+        session.add_message(
+            Message(
+                role="system",
+                content=(
+                    "Command execution summary: "
+                    f"{parsed_command.name} was executed. Result: "
+                    f"{command_summary}"
+                ),
+            )
+        )

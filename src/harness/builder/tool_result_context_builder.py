@@ -54,28 +54,20 @@ def build_tool_results_context(
     requested_output_ids = set(tool_result_output_requests or [])
 
     for tool_result in tool_results:
-        model_requested_full_output = (
-            tool_result.id in requested_output_ids
-        )
+        model_requested_full_output = tool_result.id in requested_output_ids
+        
 
         if model_requested_full_output:
-            _add_tool_result_output_to_context_paragraphs(
-                context_paragraphs,
-                tool_result,
-            )
+            _add_tool_result_output_to_context_paragraphs(context_paragraphs, tool_result)
+
             continue
 
         if has_tool_result_summary(tool_result):
-            _add_tool_result_summary_to_context_paragraphs(
-                context_paragraphs,
-                tool_result,
-            )
+            _add_tool_result_summary_to_context_paragraphs(context_paragraphs, tool_result)
+            
             continue
 
-        _add_tool_result_output_to_context_paragraphs(
-            context_paragraphs,
-            tool_result,
-        )
+        _add_tool_result_output_to_context_paragraphs(context_paragraphs, tool_result)
 
     context_paragraphs.append(TOOL_RESULTS_CONTEXT_FOOTER)
 

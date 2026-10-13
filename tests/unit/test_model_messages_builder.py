@@ -50,7 +50,9 @@ class ModelMessageBuilderTest(unittest.TestCase):
         self.assertEqual(messages, original)
         self.assertEqual(model_messages[:3], messages[:3])
         self.assertEqual(model_messages[3].role, "user")
-        self.assertEqual(model_messages[3].tool_results, ())
+        self.assertEqual(model_messages[3].tool_results, results)
+        self.assertIs(model_messages[3].tool_results[0], results[0])
+        self.assertIs(model_messages[3].tool_results[1], results[1])
         self.assertIn(results[0].summary, model_messages[3].content)
         self.assertIn(results[1].summary, model_messages[3].content)
         self.assertIn(results[0].id, model_messages[3].content)
@@ -95,7 +97,7 @@ class ModelMessageBuilderTest(unittest.TestCase):
         self.assertEqual(messages, original)
         self.assertEqual(message.content, "Original history")
         self.assertEqual(unsummarized.summary, "")
-        self.assertEqual(model_messages[0].tool_results, ())
+        self.assertEqual(model_messages[0].tool_results, message.tool_results)
 
     def test_whitespace_summary_is_treated_as_missing_and_preserved(self):
         result = ToolResult(
@@ -115,6 +117,110 @@ class ModelMessageBuilderTest(unittest.TestCase):
         self.assertEqual(result.summary, "  \n\t")
         self.assertEqual(message.content, "Original history")
         self.assertIs(message.tool_results[0], result)
+
+    def test_update_model_messages_replaces_only_requested_summary(self):
+        requested = ToolResult(
+            "read_file",
+            "complete requested output",
+            "Requested summary.",
+            id="requested-id",
+        )
+        untouched = ToolResult(
+            "read_file",
+            "complete untouched output",
+            "Untouched summary.",
+            id="untouched-id",
+        )
+        unsummarized = ToolResult(
+            "bash",
+            "complete unsummarized output",
+            id="unsummarized-id",
+        )
+        unrelated = Message(role="assistant", content="Continue the task")
+        source = Message(
+            role="user",
+            content="Original tool results",
+            tool_results=(requested, untouched, unsummarized),
+        )
+        builder = ModelMessageBuilder()
+        model_messages = builder.compose_model_messages([unrelated, source])
+        original = deepcopy(model_messages)
+
+        updated = builder.update_model_messages_by_tool_result_output_requests_ids(
+            model_messages=model_messages,
+            tool_result_output_requests=[requested.id],
+        )
+
+        content = updated[1].content
+        self.assertEqual(model_messages, original)
+        self.assertIs(updated[0], unrelated)
+        self.assertIn(requested.output, content)
+        self.assertNotIn(requested.summary, content)
+        self.assertIn(untouched.summary, content)
+        self.assertNotIn(untouched.output, content)
+        self.assertIn(unsummarized.output, content)
+        self.assertEqual(content.count(requested.id), 1)
+        self.assertEqual(content.count(untouched.id), 1)
+        self.assertEqual(content.count(unsummarized.id), 1)
+        self.assertEqual(content.count(TOOL_RESULTS_CONTEXT_HEADER), 1)
+        self.assertEqual(content.count(TOOL_RESULTS_CONTEXT_FOOTER), 1)
+        self.assertEqual(len(updated), len(model_messages))
+
+    def test_update_model_messages_handles_empty_and_unknown_requests(self):
+        result = ToolResult(
+            "read_file",
+            "complete output",
+            "Existing summary.",
+            id="known-id",
+        )
+        builder = ModelMessageBuilder()
+        model_messages = builder.compose_model_messages([
+            Message(role="user", content="Original", tool_results=(result,)),
+        ])
+
+        empty_update = builder.update_model_messages_by_tool_result_output_requests_ids(
+            model_messages=model_messages,
+            tool_result_output_requests=[],
+        )
+        unknown_update = builder.update_model_messages_by_tool_result_output_requests_ids(
+            model_messages=model_messages,
+            tool_result_output_requests=["unknown-id"],
+        )
+
+        self.assertIs(empty_update, model_messages)
+        self.assertEqual(unknown_update, model_messages)
+        self.assertIs(unknown_update, model_messages)
+        self.assertIs(unknown_update[0], model_messages[0])
+
+    def test_update_model_messages_handles_multiple_requested_ids(self):
+        first = ToolResult(
+            "read_file",
+            "first complete output",
+            "First summary.",
+            id="first-id",
+        )
+        second = ToolResult(
+            "bash",
+            "second complete output",
+            "Second summary.",
+            id="second-id",
+        )
+        builder = ModelMessageBuilder()
+        model_messages = builder.compose_model_messages([
+            Message(role="user", content="First", tool_results=(first,)),
+            Message(role="user", content="Second", tool_results=(second,)),
+        ])
+
+        updated = builder.update_model_messages_by_tool_result_output_requests_ids(
+            model_messages=model_messages,
+            tool_result_output_requests=[first.id, second.id],
+        )
+
+        self.assertIn(first.output, updated[0].content)
+        self.assertNotIn(first.summary, updated[0].content)
+        self.assertIn(second.output, updated[1].content)
+        self.assertNotIn(second.summary, updated[1].content)
+        self.assertEqual(len(updated), len(model_messages))
 
     def test_runner_keeps_and_sends_unsummarized_results_across_turns(self):
         for success in (True, False):
@@ -150,8 +256,115 @@ class ModelMessageBuilderTest(unittest.TestCase):
                     model_messages = call.args[0]
                     self.assertEqual(sum(raw_output in message.content for message in model_messages), 1)
                     self.assertTrue(any("concise semantic summary" in message.content for message in model_messages))
-                    self.assertFalse(any(message.tool_results for message in model_messages))
+                    self.assertEqual(
+                        sum(bool(message.tool_results) for message in model_messages),
+                        1,
+                    )
                 self.assertEqual(stored.tool_results[0].output, raw_output)
+
+    def test_runner_reinvokes_model_for_requested_previous_output(self):
+        previous = ToolResult(
+            "read_file",
+            "complete previous output",
+            "Previous summary.",
+            id="previous-id",
+        )
+        client = Mock()
+        client.generate.side_effect = [
+            ModelResponse(tool_result_output_requests=[previous.id]),
+            ModelResponse(text="Done"),
+        ]
+        with patch.object(SessionManager, "_load_system_prompt", return_value="Instructions"):
+            runner = Orchestrator(client)
+        session = runner._session_manager.current_session
+        stored_message = Message(
+            role="user",
+            content="Stored previous output",
+            tool_results=(previous,),
+        )
+        session.add_message(stored_message)
+        message_count_before_handle = len(session.messages)
+        runner._tool_registry.execute = Mock()
+
+        self.assertEqual(runner.handle(Request.create("Continue")), "Done")
+
+        first_messages = client.generate.call_args_list[0].args[0]
+        next_messages = client.generate.call_args_list[1].args[0]
+        self.assertTrue(any(previous.summary in message.content for message in first_messages))
+        self.assertFalse(any(previous.output in message.content for message in first_messages))
+        self.assertTrue(any(previous.output in message.content for message in next_messages))
+        self.assertFalse(any(previous.summary in message.content for message in next_messages))
+        self.assertEqual(
+            sum(message.content.count(previous.id) for message in next_messages),
+            1,
+        )
+        self.assertEqual(len(session.messages), message_count_before_handle + 2)
+        self.assertFalse(
+            any(message.tool_result_output_requests for message in session.messages)
+        )
+        stored_messages = [
+            message
+            for message in session.messages
+            if message.tool_results
+        ]
+        self.assertEqual(len(stored_messages), 1)
+        self.assertIs(stored_messages[0], stored_message)
+        self.assertEqual(stored_message.content, "Stored previous output")
+        self.assertIs(stored_message.tool_results[0], previous)
+        runner._tool_registry.execute.assert_not_called()
+
+    def test_runner_sends_requested_previous_output_on_next_model_call(self):
+        previous = ToolResult(
+            "read_file",
+            "complete previous output",
+            "Previous summary.",
+            id="previous-id",
+        )
+        client = Mock()
+        client.generate.side_effect = [
+            ModelResponse(
+                tool_calls=[ToolCall("read_file", {"path": "next.py"})],
+                tool_result_output_requests=[previous.id],
+            ),
+            ModelResponse(text="Done"),
+        ]
+        with patch.object(SessionManager, "_load_system_prompt", return_value="Instructions"):
+            runner = Orchestrator(client)
+        session = runner._session_manager.current_session
+        session.add_message(
+            Message(
+                role="user",
+                content="Stored previous output",
+                tool_results=(previous,),
+            )
+        )
+        message_count_before_handle = len(session.messages)
+        runner._tool_registry.execute = Mock(return_value="new tool output")
+
+        self.assertEqual(runner.handle(Request.create("Continue")), "Done")
+
+        first_messages = client.generate.call_args_list[0].args[0]
+        next_messages = client.generate.call_args_list[1].args[0]
+        self.assertTrue(any(previous.summary in message.content for message in first_messages))
+        self.assertFalse(any(previous.output in message.content for message in first_messages))
+        self.assertTrue(any(previous.output in message.content for message in next_messages))
+        self.assertFalse(any(previous.summary in message.content for message in next_messages))
+        self.assertEqual(
+            sum(message.content.count(previous.id) for message in next_messages),
+            1,
+        )
+        self.assertEqual(
+            sum(message.content.count("new tool output") for message in next_messages),
+            1,
+        )
+        self.assertEqual(len(session.messages), message_count_before_handle + 4)
+        self.assertFalse(
+            any(message.tool_result_output_requests for message in session.messages)
+        )
+        runner._tool_registry.execute.assert_called_once_with(
+            "read_file",
+            {"path": "next.py"},
+        )
 
     def test_runner_publishes_multiple_tool_results_once_in_execution_order(self):
         client = Mock()

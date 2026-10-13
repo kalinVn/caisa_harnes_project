@@ -1,23 +1,17 @@
 import json
 
+from harness.validators.command_response_validator import CommandResponseValidator
+
 
 def parse_command_response(response_text: str) -> tuple[str, str] | None:
-    """Parse a command reply, or return None if its expected JSON format is invalid."""
-    try:
-        payload = json.loads(response_text)
-    except json.JSONDecodeError:
+    """Parse a command response after it passes validation."""
+    validator = CommandResponseValidator()
+
+    if not validator.validate(response_text):
         return None
 
-    if not isinstance(payload, dict):
-        return None
+    payload = json.loads(response_text)
+    answer = payload["answer"]
+    command_summary = payload["command_summary"]
 
-    answer = payload.get("answer")
-    summary = payload.get("command_summary")
-
-    if not isinstance(answer, str):
-        return None
-
-    if not isinstance(summary, str) or not summary.strip():
-        return None
-
-    return answer, summary.strip()
+    return answer, command_summary.strip()
