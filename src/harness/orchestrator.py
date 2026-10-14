@@ -100,43 +100,32 @@ class Orchestrator:
             response = self._model_client.generate(model_messages)
             
             session.apply_tool_result_summaries(response.tool_result_summaries)
-            requested_tool_result_ids: list[str] = []
-            
-            for result_id in response.tool_result_output_requests:
-                tool_result = session.get_tool_result_by_id(result_id)
-                if tool_result is not None:
-                    requested_tool_result_ids.append(tool_result.id)
+            requested_tool_result_ids = self._get_requested_tool_result_ids(session, response)
 
             if not response.tool_calls:
-                if requested_tool_result_ids:
-                    updated_model_messages = (
-                        self._model_messages_builder
-                        .update_model_messages_by_tool_result_output_requests_ids(
-                            model_messages=model_messages,
-                            tool_result_output_requests=(
-                                requested_tool_result_ids
-                            ),
-                        )
+                updated_model_messages, model_messages_updated = (
+                    self._update_model_messages_by_requested_tool_result_ids(
+                        model_messages,
+                        requested_tool_result_ids,
                     )
+                )
 
-                    if updated_model_messages is not model_messages:
-                        if tool_result_output_request_steps >= self.MAX_TOOL_RESULT_OUTPUT_REQUEST_STEPS:
-                            message = (
-                                "Maximum tool result output request steps "
-                                "exceeded."
-                            )
-                            session.add_message(
-                                Message(role="assistant", content=message)
-                            )
-                            return message
+                if model_messages_updated:
+                    if tool_result_output_request_steps >= self.MAX_TOOL_RESULT_OUTPUT_REQUEST_STEPS:
+                        message = (
+                            "Maximum tool result output request steps "
+                            "exceeded."
+                        )
+                        session.add_message(Message(role="assistant", content=message))
 
-                        tool_result_output_request_steps += 1
-                        model_messages = updated_model_messages
-                        continue
+                        return message
 
-                # str: финален отговор към потребителя, напр. "Файлът е прочетен успешно."
-                # list[Message]: нов контекст с инструкция за поправка на JSON;
-                # изпращаме го на модела при следващата итерация.
+                    tool_result_output_request_steps += 1
+                    model_messages = updated_model_messages
+
+                    continue
+
+               
                 result = self._handle_response_without_tool_calls(
                     session,
                     response,
@@ -183,14 +172,46 @@ class Orchestrator:
                 parsed_command,
             )
 
-            if requested_tool_result_ids:
-                model_messages = (self._model_messages_builder.update_model_messages_by_tool_result_output_requests_ids(
-                        model_messages=model_messages,
-                        tool_result_output_requests=(
-                            requested_tool_result_ids
-                        )
-                    )
+            model_messages, _ = (
+                self._update_model_messages_by_requested_tool_result_ids(
+                    model_messages,
+                    requested_tool_result_ids,
                 )
+            )
+
+    def _get_requested_tool_result_ids(
+        self,
+        session: Session,
+        response: ModelResponse,
+    ) -> list[str]:
+        """Връща валидните ID-та на поисканите резултати от инструменти."""
+        requested_tool_result_ids: list[str] = []
+
+        for result_id in response.tool_result_output_requests:
+            tool_result = session.get_tool_result_by_id(result_id)
+            if tool_result is not None:
+                requested_tool_result_ids.append(tool_result.id)
+
+        return requested_tool_result_ids
+
+    def _update_model_messages_by_requested_tool_result_ids(
+        self,
+        model_messages: list[Message],
+        requested_tool_result_ids: list[str],
+    ) -> tuple[list[Message], bool]:
+        """Връща обновените съобщения и флаг дали са променени."""
+        if not requested_tool_result_ids:
+            return model_messages, False
+
+        updated_messages = (
+            self._model_messages_builder
+            .update_model_messages_by_tool_result_output_requests_ids(
+                model_messages=model_messages,
+                tool_result_output_requests=requested_tool_result_ids,
+            )
+        )
+
+        return updated_messages, updated_messages is not model_messages
 
     def _handle_response_without_tool_calls(
         self,
@@ -199,6 +220,10 @@ class Orchestrator:
         parsed_command: ParsedCommand | None,
         command_response_retries: int,
     ) -> str | list[Message]:
+        """ str: финален отговор към потребителя, напр. "Файлът е прочетен успешно."
+            list[Message]: нов контекст с инструкция за поправка на JSON;
+            изпращаме го на модела при следващата итерация.
+        """
         # Проверяваме дали имаме изобщо команда
         # Ako parsed_command е None, просто записваме текста , без да се занимаваме с нищо друго
         if parsed_command is None:
