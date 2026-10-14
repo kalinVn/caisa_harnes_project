@@ -313,6 +313,49 @@ class ModelMessageBuilderTest(unittest.TestCase):
         self.assertIs(stored_message.tool_results[0], previous)
         runner._tool_registry.execute.assert_not_called()
 
+    def test_runner_limits_requested_previous_output_retries(self):
+        previous_results = [
+            ToolResult(
+                "read_file",
+                f"complete output {index}",
+                f"Summary {index}.",
+                id=f"result-{index}",
+            )
+            for index in range(
+                Orchestrator.MAX_TOOL_RESULT_OUTPUT_REQUEST_STEPS + 1
+            )
+        ]
+        client = Mock()
+        client.generate.side_effect = [
+            ModelResponse(tool_result_output_requests=[result.id])
+            for result in previous_results
+        ]
+        with patch.object(SessionManager, "_load_system_prompt", return_value="Instructions"):
+            runner = Orchestrator(client)
+        session = runner._session_manager.current_session
+        session.add_message(
+            Message(
+                role="user",
+                content="Stored previous outputs",
+                tool_results=tuple(previous_results),
+            )
+        )
+
+        result = runner.handle(Request.create("Continue"))
+
+        self.assertEqual(
+            result,
+            "Maximum tool result output request steps exceeded.",
+        )
+        self.assertEqual(
+            client.generate.call_count,
+            Orchestrator.MAX_TOOL_RESULT_OUTPUT_REQUEST_STEPS + 1,
+        )
+        self.assertEqual(
+            session.messages[-1],
+            Message(role="assistant", content=result),
+        )
+
     def test_runner_sends_requested_previous_output_on_next_model_call(self):
         previous = ToolResult(
             "read_file",

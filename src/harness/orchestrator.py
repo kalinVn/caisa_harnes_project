@@ -5,6 +5,7 @@ from harness.builder.command_response_format_context_builder import (
     build_command_response_retry_context,
 )
 from harness.builder.tool_call_context_builder import build_tool_calls_context
+from harness.builder.tools_schema_builder import TOOLS_CONTEXT_HEADER
 from harness.parser.command_response_parser import parse_command_response
 from harness.builder.tool_result_context_builder import build_tool_results_context
 from harness.loader.command_context_loader import get_command_message_obj
@@ -42,6 +43,7 @@ from harness.models.response import ModelResponse
 class Orchestrator:
     MAX_TOOL_STEPS = 20
     MAX_COMMAND_RESPONSE_RETRIES = 2
+    MAX_TOOL_RESULT_OUTPUT_REQUEST_STEPS = 3
     def __init__(
         self,
         model_client: ModelClient,
@@ -75,6 +77,10 @@ class Orchestrator:
         self,
         request: Request,
     ) -> str:
+        tool_steps = 0
+        command_response_retries = 0
+        tool_result_output_request_steps = 0
+        
         if not request.message.strip():
             return "Please enter a message."
         
@@ -84,15 +90,15 @@ class Orchestrator:
         parsed_command = parse_command(request.message)
 
         # Подготвя съобщенията за модела, добавя временни инструкции и контекст за команда,
-        # без да променя историята на сесията.
+        # без да променя историята на сесията.Ako съобщението е команда
         model_messages = self._create_model_messages(
             session.messages,
             parsed_command,
         )
-        tool_steps = 0
-        command_response_retries = 0
+        
         while True:
             response = self._model_client.generate(model_messages)
+            
             session.apply_tool_result_summaries(response.tool_result_summaries)
             requested_tool_result_ids: list[str] = []
             
@@ -114,6 +120,17 @@ class Orchestrator:
                     )
 
                     if updated_model_messages is not model_messages:
+                        if tool_result_output_request_steps >= self.MAX_TOOL_RESULT_OUTPUT_REQUEST_STEPS:
+                            message = (
+                                "Maximum tool result output request steps "
+                                "exceeded."
+                            )
+                            session.add_message(
+                                Message(role="assistant", content=message)
+                            )
+                            return message
+
+                        tool_result_output_request_steps += 1
                         model_messages = updated_model_messages
                         continue
 
@@ -125,7 +142,6 @@ class Orchestrator:
                     response,
                     parsed_command,
                     command_response_retries,
-                    model_messages
                 )
 
                 if isinstance(result, str):
@@ -182,7 +198,6 @@ class Orchestrator:
         response: ModelResponse,
         parsed_command: ParsedCommand | None,
         command_response_retries: int,
-        model_messages: list[Message]
     ) -> str | list[Message]:
         # Проверяваме дали имаме изобщо команда
         # Ako parsed_command е None, просто записваме текста , без да се занимаваме с нищо друго
@@ -206,6 +221,7 @@ class Orchestrator:
 
             # Записваме command_summary като системно съобщение
             self._add_command_summary_message(session, parsed_command, command_summary)
+            session.add_message(Message(role="assistant", content=answer))
 
             # ЗФиналния текст който потребителя трябва да чуе
             return answer
@@ -225,6 +241,11 @@ class Orchestrator:
             return message
 
 
+        model_messages = self._create_model_messages(
+            session.messages,
+            parsed_command,
+            include_tools=False,
+        )
         model_messages.append(build_command_response_retry_context())
 
         return model_messages
@@ -259,6 +280,7 @@ class Orchestrator:
         self,
         session_messages: list[Message],
         parsed_command: ParsedCommand | None,
+        include_tools: bool = True,
     ) -> list[Message]:
         command_message = None
         # Добавяме системно съобщение само за текущия ход, което указва на модела как да форматира
@@ -276,8 +298,19 @@ class Orchestrator:
                 tool_registry=self._tool_registry,
                 command_loader=self._command_loader,
             )
+        messages_for_model = session_messages
+        if not include_tools:
+            messages_for_model = [
+                message
+                for message in session_messages
+                if not (
+                    message.role == "system"
+                    and message.content.startswith(TOOLS_CONTEXT_HEADER)
+                )
+            ]
+
         model_messages = self._model_messages_builder.compose_model_messages(
-            session_messages + response_format_instruction
+            messages_for_model + response_format_instruction
         )
         if command_message is not None:
             model_messages.append(command_message)

@@ -25,6 +25,7 @@ class Session:
 
         return None
 
+    # Прикачва резюметата на резултатите към сесията, така че после да се ползва резюме вместо пълния изход.
     def apply_tool_result_summaries(
         self,
         summaries: list[ToolResultSummary],

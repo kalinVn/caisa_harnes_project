@@ -43,6 +43,12 @@ class CommandLoader:
         self,
         content: str,
     ) -> dict[str, str]:
+        return self._parse_sections(content)
+
+    def _parse_sections(
+        self,
+        content: str,
+    ) -> dict[str, str]:
         sections: dict[str, list[str]] = {}
         current_section: str | None = None
 
