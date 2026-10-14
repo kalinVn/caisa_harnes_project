@@ -89,8 +89,8 @@ class Orchestrator:
         session.add_message(user_message)
         parsed_command = parse_command(request.message)
 
-        # Подготвя съобщенията за модела, добавя временни инструкции и контекст за команда,
-        # без да променя историята на сесията.Ako съобщението е команда
+        # Prepare model messages with temporary instructions and command
+        # context without modifying the session history.
         model_messages = self._create_model_messages(
             session.messages,
             parsed_command,
@@ -134,9 +134,8 @@ class Orchestrator:
                         model_messages = updated_model_messages
                         continue
 
-                # str: финален отговор към потребителя, напр. "Файлът е прочетен успешно."
-                # list[Message]: нов контекст с инструкция за поправка на JSON;
-                # изпращаме го на модела при следващата итерация.
+                # A str is the final user response. A list[Message] is updated
+                # context with JSON correction instructions for the next call.
                 result = self._handle_response_without_tool_calls(
                     session,
                     response,
@@ -199,37 +198,27 @@ class Orchestrator:
         parsed_command: ParsedCommand | None,
         command_response_retries: int,
     ) -> str | list[Message]:
-        # Проверяваме дали имаме изобщо команда
-        # Ako parsed_command е None, просто записваме текста , без да се занимаваме с нищо друго
+        # For a regular message, store the response without command handling.
         if parsed_command is None:
             self._add_response_message(session, response)
             return response.text
 
-
-        #Проверява дали парснатият респонс връща очаквания резултат. 
-        # Ако искаш, мога да предложа и по-формално или по-стегнато обяснение.
-        #Пример: ако респонсът е JSON с поле status: "ok", парсваме респонса и проверяваме, 
-        # че status е точно "ok", а не "error
+        # Parse the command response and verify that it has the expected form.
         parsed_response = parse_command_response(response.text)
 
-        # Ako parsed_response е None, т.е има грешка в парсването , примерно не е върнал правилния output
-        #  тогава добавяме към session messages нов message в който казваме на модела че не е върнал правилния
-        #  резултат
         if parsed_response is not None:
 
             answer, command_summary = parsed_response
 
-            # Записваме command_summary като системно съобщение
+            # Store command_summary as a system message.
             self._add_command_summary_message(session, parsed_command, command_summary)
             session.add_message(Message(role="assistant", content=answer))
 
-            # ЗФиналния текст който потребителя трябва да чуе
+            # Return the final text intended for the user.
             return answer
 
-        # Ако сме изчерпали всички опити за поправяне на отговора,
-        # записваме съобщението в историята и връщаме текста към потребителя
-        # връщаме стринг message и добавяме в Message(role="assistant", content=message)
-        #  в session messages
+        # After all correction attempts are exhausted, store and return an
+        # error message.
         if command_response_retries >= self.MAX_COMMAND_RESPONSE_RETRIES:
             message = (
                 "Command response remained invalid after "
@@ -282,29 +271,17 @@ class Orchestrator:
         parsed_command: ParsedCommand | None,
         include_tools: bool = True,
     ) -> list[Message]:
-        """  
-        Парсва входния текст и връща ParsedCommand с името
-            на командата и нейните аргументи.
-        
-            Пример:
-            Вход:  "execute command read_file test.txt"
-            Изход: ParsedCommand(name="read_file", arguments=["test.txt"])
+        """Build model messages for the current request.
 
-            Добавяме системно съобщение само за текущия ход, което указва на модела как да форматира
-            финалния отговор при команда. Това съобщение не се записва в историята на сесията и важи
-            само за конкретното извикване
-            Може да добавим – например, при команда за създаване на файл, инструктираме модела
-            финалният отговор да е  JSON с полета answer и command_summary. Това важи само за този ход
-            и не променя историята
-        
+        For commands, add a temporary system message describing the required
+        final response format and append the resolved command context. These
+        temporary messages apply only to the current call and are not stored in
+        the session history. Tool definitions can be excluded for correction
+        retries.
         """
         command_message = None
-        # Добавяме системно съобщение само за текущия ход, което указва на модела как да форматира
-        # финалния отговор при команда. Това съобщение не се записва в историята на сесията и важи
-        # само за конкретното извикване
-        # Може да добавим – например, при команда за създаване на файл, инструктираме модела
-        # финалният отговор да е  JSON с полета answer и command_summary. Това важи само за този ход
-        # и не променя историята
+        # Add a per-call format instruction for command responses without
+        # storing it in the session history.
         response_format_instruction: list[Message] = []
         if parsed_command is not None:
             response_format_instruction.append(build_command_response_format_context())
@@ -333,7 +310,7 @@ class Orchestrator:
         return model_messages
 
     def _add_response_message(self, session: Session, response: ModelResponse) -> None:
-        """Записва обикновен финален отговор, без команда. И добавя """
+        """Store a regular final response that is not associated with a command."""
 
         session.add_message(
             Message(
@@ -347,7 +324,7 @@ class Orchestrator:
         parsed_command: ParsedCommand,
         command_summary: str,
     ) -> None:
-        """Записва вече валидиран команден отговор и неговото обобщение."""
+        """Store the summary of an already validated command response."""
         session.add_message(
             Message(
                 role="system",

@@ -6,9 +6,7 @@ class CommandResolver:
         self._commands_directory = commands_directory
 
     def resolve(self, command_name: str) -> Path:
-        """проверява дали съществува такъв файл, подава се  името на командата
-        а класа има името на дирескторията
-        """
+        """Resolve an existing command file from the command name."""
         command_path = (
             self._commands_directory
             / f"{command_name}.md"

@@ -21,7 +21,7 @@ class CommandLoader:
                 "Command must contain a '# Description' section."
             )
 
-        #"Извличаме всички секции без 'Name' и 'Description'.
+        # Extract all sections except "Name" and "Description".
         extra_sections = {
             key: value
             for key, value in file_command_sections.items()
@@ -54,29 +54,27 @@ class CommandLoader:
         sections: dict[str, list[str]] = {}
         current_section: str | None = None
 
-        # Разделяме съдържанието на текста на отделни редове чрез splitlines().
-        # Пример:
-        # content = "ябълка\nбанан"
-        # content.splitlines() -> ["ябълка", "банан"]
+        # Split the text content into individual lines with splitlines().
+        # Example:
+        # content = "apple\nbanana"
+        # content.splitlines() -> ["apple", "banana"]
         file_lines = content.splitlines()
 
-        # Split-ваме масива и махаме празните стрингове от тип "", "  "
-        # Пример ако content.splitlines() =  ["ябълка","","банан", "  "]
-        # със file_lines = [line for line in file_lines if line.strip()] 
-        # става на ["ябълка", "банан"]
+        # Remove empty or whitespace-only strings from the list.
+        # For example, ["apple", "", "banana", "  "] becomes
+        # ["apple", "banana"].
         file_lines = [line for line in file_lines if line.strip()]
 
         for line in file_lines:
-            #"Ако редът започва с '# ', например '# name', това означава, 
-            # че започва нова секция с име 'name'."
+            # A line starting with "# ", such as "# name", begins a new
+            # section named "name".
             if line.startswith("# "):
                 current_section = line[2:].strip()
                 sections[current_section] = []
                 continue
 
-            #"Ако редът не започва с '# ', например 'test-write-file', това означава, 
-            # че новата секция с key current_section добавя линията към нея"
-            # пример ако current_section = name
+            # A line without the "# " prefix is appended to the current
+            # section. For example, when current_section is "name":
             # sections['name'].append('test-write-file')
             if current_section is not None:
                 sections[current_section].append(line)
