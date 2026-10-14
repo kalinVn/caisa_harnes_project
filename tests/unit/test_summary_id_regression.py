@@ -4,11 +4,11 @@ from unittest.mock import Mock, patch
 
 from harness.orchestrator import Orchestrator
 from harness.builder.command_response_format_context_builder import build_command_response_format_context
-from harness.parser.command_response_parser import parse_command_response
 from harness.session_manager import SessionManager
 from harness.models.request import Request
 from harness.domain.message import Message
 from harness.domain.tool_result import ToolResult
+from harness.parser.command_response_parser import parse_command_response
 from harness.parser.response_parser import parse_model_response
 
 
@@ -45,7 +45,10 @@ class SummaryIDRegressionTest(unittest.TestCase):
     def test_command_json_stays_inside_text(self):
         inner = json.dumps(dict(answer="Done", command_summary="Reviewed files."))
         response = parse_model_response(json.dumps(dict(text=inner, tool_calls=[], tool_result_summaries=[])))
-        self.assertEqual(parse_command_response(response.text), ("Done", "Reviewed files."))
+        self.assertEqual(
+            parse_command_response(response.text),
+            ("Done", "Reviewed files."),
+        )
         instruction = build_command_response_format_context().content
         self.assertIn("`text` string", instruction)
         self.assertIn("`tool_result_summaries`", instruction)

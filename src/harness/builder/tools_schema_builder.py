@@ -1,6 +1,9 @@
 from harness.contracts.tool import Tool
 
 
+TOOLS_CONTEXT_HEADER = "Available tools:"
+
+
 def build_tools_schema(
     tools: list[Tool],
 ) -> str:
@@ -8,7 +11,7 @@ def build_tools_schema(
         return "No tools are currently available."
 
     parts = [
-        "Available tools:",
+        TOOLS_CONTEXT_HEADER,
         "",
     ]
 
