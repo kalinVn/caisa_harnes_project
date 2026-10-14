@@ -1,9 +1,10 @@
 import json
 import unittest
 
-from harness.domain.tool_calls.call.model import ToolCall
-from harness.intelligence.models.contracts.response.model import ModelResponse, ToolResultSummary
-from harness.intelligence.models.parsing.response.parser import parse_model_response
+from harness.domain.tool_call import ToolCall
+from harness.models.response import ModelResponse
+from harness.models.tool_result_summary import ToolResultSummary
+from harness.parser.response_parser import parse_model_response
 
 IDS = ("bc950638-61a9-4662-a330-76c77c43225d", "99f97142-ae4f-404f-a0f5-81a998a42df6")
 
@@ -18,6 +19,16 @@ class ModelResponseParserTest(unittest.TestCase):
         self.assertEqual(parse_model_response(json.dumps(dict(
             text="Finished.", tool_calls=[], tool_result_summaries=[]
         ))), ModelResponse(text="Finished."))
+
+    def test_optional_tool_result_output_requests(self):
+        parsed = parse_model_response(json.dumps(dict(
+            text="",
+            tool_calls=[],
+            tool_result_summaries=[],
+            tool_result_output_requests=list(IDS),
+        )))
+
+        self.assertEqual(parsed.tool_result_output_requests, list(IDS))
 
     def test_one_and_multiple_calls_with_empty_text_and_summaries(self):
         calls = [dict(tool="read_file", arguments={"path": "a.py"}),
@@ -50,6 +61,8 @@ class ModelResponseParserTest(unittest.TestCase):
         for field in ("tool_calls", "tool_result_summaries"):
             for value in (None, "", {}, True, 1):
                 invalid.append({**valid, field: value})
+        for value in (None, "", {}, True, 1, [None], [1], [""]):
+            invalid.append({**valid, "tool_result_output_requests": value})
         for call in (None, [], "x", {}, {"tool": "x"},
                      {"tool": 1, "arguments": {}}, {"tool": " ", "arguments": {}},
                      *({"tool": "x", "arguments": x} for x in (None, [], "", 1, True))):

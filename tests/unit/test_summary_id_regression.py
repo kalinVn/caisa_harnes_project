@@ -2,12 +2,14 @@ import json
 import unittest
 from unittest.mock import Mock, patch
 
-from harness.application.orchestration.engine.runner.runner import Runner
-from harness.application.orchestration.sessions.manager.manager import SessionManager
-from harness.application.request.model.request import Request
-from harness.domain.messages.message.model import Message
-from harness.domain.tool_calls.result.model import ToolResult
-from harness.intelligence.models.parsing.response.parser import parse_model_response
+from harness.orchestrator import Orchestrator
+from harness.builder.command_response_format_context_builder import build_command_response_format_context
+from harness.session_manager import SessionManager
+from harness.models.request import Request
+from harness.domain.message import Message
+from harness.domain.tool_result import ToolResult
+from harness.parser.command_response_parser import parse_command_response
+from harness.parser.response_parser import parse_model_response
 
 
 class SummaryIDRegressionTest(unittest.TestCase):
@@ -22,7 +24,7 @@ class SummaryIDRegressionTest(unittest.TestCase):
         client.generate.side_effect = [parse_model_response(json.dumps(payload)),
             parse_model_response(json.dumps(dict(text="Done", tool_calls=[], tool_result_summaries=[])))]
         with patch.object(SessionManager, "_load_system_prompt", return_value="Instructions"):
-            runner = Runner(client)
+            runner = Orchestrator(client)
         session = runner._session_manager.current_session
         for result in results:
             session.add_message(Message(role="user", content=result.output, tool_results=(result,)))
@@ -33,7 +35,7 @@ class SummaryIDRegressionTest(unittest.TestCase):
             return "new output"
 
         runner._tool_registry.execute = Mock(side_effect=execute)
-        with patch("harness.domain.tool_calls.result.model.uuid4", return_value="future-id"):
+        with patch("harness.domain.tool_result.uuid4", return_value="future-id"):
             self.assertEqual(runner.handle(Request.create("Continue")), "Done")
         stored = [r for m in session.messages for r in m.tool_results]
         self.assertEqual([r.id for r in stored], ids + ["future-id"])
@@ -43,7 +45,10 @@ class SummaryIDRegressionTest(unittest.TestCase):
     def test_command_json_stays_inside_text(self):
         inner = json.dumps(dict(answer="Done", command_summary="Reviewed files."))
         response = parse_model_response(json.dumps(dict(text=inner, tool_calls=[], tool_result_summaries=[])))
-        self.assertEqual(Runner._parse_command_response(None, response.text), ("Done", "Reviewed files."))
-        instruction = Runner._build_command_response_format_context(None).content
+        self.assertEqual(
+            parse_command_response(response.text),
+            ("Done", "Reviewed files."),
+        )
+        instruction = build_command_response_format_context().content
         self.assertIn("`text` string", instruction)
         self.assertIn("`tool_result_summaries`", instruction)

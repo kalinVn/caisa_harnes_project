@@ -15,7 +15,7 @@ dependencies = [
 requires-python = ">=3.10"
 
 [project.scripts]
-harness = "harness.application.entrypoints.cli.main:main"
+harness = "harness.app.cli.main:main"
 
 [tool.setuptools.packages.find]
 where = ["src"]

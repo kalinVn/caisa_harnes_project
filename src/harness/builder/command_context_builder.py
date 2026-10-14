@@ -1,0 +1,36 @@
+from harness.domain.command import Command
+
+# Takes the created Command object with its name, description, and sections.
+# Builds the text context that is passed to the LLM.
+#
+# Example input Command object:
+# name = "write_file"
+# description = "Creates a new file"
+# sections = {"Usage": "write_file path content"}
+#
+# The result is a single formatted text block:
+# Name: write_file
+# Description: Creates a new file
+# Usage: write_file path content
+
+def create_context_from_command_obj(command_obj: Command) -> str:
+    parts = [
+        (
+            "Harness command definition follows. The command name selects this "
+            "definition; it is not a shell command and must never be passed to "
+            "the bash tool. Follow the Instructions section exactly. For bash, "
+            "execute only the shell command explicitly stated in Instructions. "
+            "If a matching tool result is already present, do not repeat the "
+            "tool call; use that result to finish the command."
+        ),
+        f"Executing command: {command_obj.name}",
+        f"Description:\n{command_obj.description}",
+    ]
+
+    for section_name, section_content in command_obj.sections.items():
+        parts.append(
+            f"{section_name}:\n"
+            f"{section_content}"
+        )
+
+    return "\n\n".join(parts)

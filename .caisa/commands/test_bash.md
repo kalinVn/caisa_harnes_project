@@ -1,6 +1,6 @@
 # Name
 
-test-bash
+test_bash
 
 # Description
 

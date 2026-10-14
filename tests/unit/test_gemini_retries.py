@@ -5,13 +5,13 @@ from unittest.mock import patch
 import httpx
 from google.genai.errors import ClientError, ServerError
 
-from harness.application.entrypoints.cli.main import main
-from harness.domain.messages.message.model import Message
-from harness.intelligence.models.contracts.errors import (
+from harness.app.cli.main import main
+from harness.domain.message import Message
+from harness.models.errors import (
     ModelConnectionError,
     ModelRateLimitError,
 )
-from harness.intelligence.models.providers.google.client.client import GeminiClient
+from harness.providers.google_client import GeminiClient
 
 
 class GeminiRetriesTest(unittest.TestCase):
@@ -66,9 +66,9 @@ class GeminiRetriesTest(unittest.TestCase):
 
     def test_cli_stays_open_after_unavailable_error(self):
         with (
-            patch("harness.application.entrypoints.cli.main.create_model_client"),
-            patch("harness.application.entrypoints.cli.main.Runner") as runner,
-            patch("harness.application.entrypoints.cli.main.read_input",
+            patch("harness.app.cli.main.create_model_client"),
+            patch("harness.app.cli.main.Orchestrator") as runner,
+            patch("harness.app.cli.main.read_input",
                   side_effect=["Hello", "Try again", "exit"]),
             patch("sys.stdout", new_callable=io.StringIO) as stdout,
         ):
@@ -80,3 +80,14 @@ class GeminiRetriesTest(unittest.TestCase):
         self.assertIn("Gemini is temporarily unavailable.", stdout.getvalue())
         self.assertIn("Harness > Done", stdout.getvalue())
         self.assertIn("AI Harness stopped.", stdout.getvalue())
+
+    @patch("tenacity.nap.time.sleep")
+    @patch("httpx.Client.send")
+    def test_missing_model_reports_configuration_error_without_retry(self, send, sleep):
+        self.client._model = "djemini"
+        send.return_value = self.response(404)
+        with self.assertRaisesRegex(ModelConnectionError, "djemini.*GEMINI_MODEL") as caught:
+            self.client.generate(self.messages)
+        self.assertIsInstance(caught.exception.__cause__, ClientError)
+        send.assert_called_once()
+        sleep.assert_not_called()
