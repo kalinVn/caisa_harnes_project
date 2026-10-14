@@ -25,11 +25,11 @@ class Session:
 
         return None
 
-    # Прикачва резюметата на резултатите към сесията, така че после да се ползва резюме вместо пълния изход.
     def apply_tool_result_summaries(
         self,
         summaries: list[ToolResultSummary],
     ) -> None:
+        """Прикачва резюметата на резултатите към сесията, така че после да се ползва резюме вместо пълния изход."""
         for summary in summaries:
             for message in self.messages:
                 for result in message.tool_results:

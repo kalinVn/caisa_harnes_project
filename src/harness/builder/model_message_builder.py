@@ -9,13 +9,15 @@ from harness.domain.message import Message
 
 class ModelMessageBuilder:
 
-    # Обхожда всички съобщения и подготвя контекста за модела.
-    # За съобщенията с tool_results използва summary, ако съществува,
-    # или пълния output, ако липсва.
-    # Събира ID-тата на tool results без summary и добавя
-    # инструкции към модела за тяхното обобщаване.
-    # Не променя оригиналните съобщения от сесията.
     def compose_model_messages(self, messages: list[Message]) -> list[Message]:
+        """Обхожда всички съобщения и подготвя контекста за модела.
+
+        За съобщенията с tool_results използва summary, ако съществува,
+        или пълния output, ако липсва.
+        Събира ID-тата на tool results без summary и добавя
+        инструкции към модела за тяхното обобщаване.
+        Не променя оригиналните съобщения от сесията.
+        """
         model_messages: list[Message] = []
 
         tool_result_ids_to_summarize = self._add_tool_results_to_model_messages(
@@ -30,14 +32,15 @@ class ModelMessageBuilder:
 
         return model_messages
 
-
-    # Обновява само контекстите с изрично поискани пълни tool outputs.
-    # Оригиналните съобщения от сесията остават непроменени.
     def update_model_messages_by_tool_result_output_requests_ids(
         self,
         model_messages: list[Message],
         tool_result_output_requests: list[str],
     ) -> list[Message]:
+        """Обновява само контекстите с изрично поискани пълни tool outputs.
+
+        Оригиналните съобщения от сесията остават непроменени.
+        """
         if not tool_result_output_requests:
             return model_messages
 
@@ -66,20 +69,21 @@ class ModelMessageBuilder:
 
         return updated_model_messages
 
-
-    # Обхожда всички съобщения и проверява дали съдържат tool_results.
-    # Ако има tool_results, обхожда всеки ToolResult.
-    # Ако ToolResult има валидно summary, използва него вместо пълния output.
-    # Ако няма summary, използва пълния output и добавя result.id
-    # в tool_result_ids_to_summarize за последващо обобщаване.
-    # Добавя обработеното съобщение в model_messages.
-    # Ако съобщението няма tool_results, го добавя без промяна.
-    # Не променя оригиналните съобщения от сесията.
     def _add_tool_results_to_model_messages(
         self,
         messages: list[Message],
         model_messages: list[Message],
     ) -> list[str]:
+        """Обхожда всички съобщения и проверява дали съдържат tool_results.
+
+        Ако има tool_results, обхожда всеки ToolResult.
+        Ако ToolResult има валидно summary, използва него вместо пълния output.
+        Ако няма summary, използва пълния output и добавя result.id
+        в tool_result_ids_to_summarize за последващо обобщаване.
+        Добавя обработеното съобщение в model_messages.
+        Ако съобщението няма tool_results, го добавя без промяна.
+        Не променя оригиналните съобщения от сесията.
+        """
         tool_result_ids_to_summarize: list[str] = []
 
         for message in messages:
@@ -102,17 +106,19 @@ class ModelMessageBuilder:
 
         return tool_result_ids_to_summarize
 
-    # Проверява дали има ToolResult ID-та, които трябва да бъдат обобщени.
-    # Използва вече събраните ID-та в tool_result_ids_to_summarize.
-    # Ако има такива ID-та, добавя към model_messages инструкция,
-    # която указва на модела за кои ToolResult-и трябва да генерира summary.
-    # Не обхожда повторно всички съобщения и не обработва tool output.
-    # Не променя оригиналните съобщения в сесията.
     def _add_tool_result_summary_instructions_to_model_messages(
         self,
         model_messages: list[Message],
         tool_result_ids_to_summarize: list[str],
     ) -> None:
+        """Проверява дали има ToolResult ID-та, които трябва да бъдат обобщени.
+
+        Използва вече събраните ID-та в tool_result_ids_to_summarize.
+        Ако има такива ID-та, добавя към model_messages инструкция,
+        която указва на модела за кои ToolResult-и трябва да генерира summary.
+        Не обхожда повторно всички съобщения и не обработва tool output.
+        Не променя оригиналните съобщения в сесията.
+        """
         if not tool_result_ids_to_summarize:
             return
 

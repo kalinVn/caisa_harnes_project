@@ -34,15 +34,17 @@ class CommandLoader:
             sections=extra_sections,
         )
 
-    # TODO: Add support for nested Markdown sections.
-    # Currently, only "# " creates a new section.
-    # Headings like "## " and "### " are treated as plain content.
-    # In the future, support hierarchical sections based on heading levels,
-    # while preserving the parent-child relationships.
     def _parse_file_command_content(
         self,
         content: str,
     ) -> dict[str, str]:
+        """TODO: Add support for nested Markdown sections.
+
+        Currently, only "# " creates a new section.
+        Headings like "## " and "### " are treated as plain content.
+        In the future, support hierarchical sections based on heading levels,
+        while preserving the parent-child relationships.
+        """
         return self._parse_sections(content)
 
     def _parse_sections(

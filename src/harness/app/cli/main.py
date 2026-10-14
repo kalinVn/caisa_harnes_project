@@ -24,7 +24,7 @@ def main() -> None:
     load_dotenv()
 
     print("AI Harness started.")
-    print("Type 'exit' to stop.\n")
+    print("Type 'exit' or 'quit' to stop.\n")
 
     model_client = create_model_client()
     runner = Orchestrator(
@@ -35,7 +35,7 @@ def main() -> None:
     while True:
         user_message = read_input()
 
-        if user_message.lower() == "exit":
+        if user_message.lower() in {"exit", "quit"}:
             print("AI Harness stopped.")
             break
 

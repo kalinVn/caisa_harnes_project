@@ -30,10 +30,22 @@ class CliMainTest(unittest.TestCase):
         self.assertEqual(
             stdout.getvalue(),
             "AI Harness started.\n"
-            "Type 'exit' to stop.\n\n"
+            "Type 'exit' or 'quit' to stop.\n\n"
             "\nHarness > Received: hello\n\n"
             "AI Harness stopped.\n",
         )
+
+    def test_main_stops_on_quit(self) -> None:
+        with (
+            patch("harness.app.cli.main.load_dotenv"),
+            patch("harness.app.cli.main.create_model_client"),
+            patch("harness.app.cli.main.Orchestrator") as runner,
+            patch("harness.app.cli.main.read_input", return_value="quit"),
+            patch("sys.stdout", new_callable=io.StringIO),
+        ):
+            main()
+
+        runner.return_value.handle.assert_not_called()
 
     def test_display_tool_result_preserves_multiline_bash_output(self) -> None:
         result = ToolResult(

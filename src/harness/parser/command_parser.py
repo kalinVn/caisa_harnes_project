@@ -10,13 +10,15 @@ class ParsedCommand:
     arguments: list[str]
 
 
-# Парсва входния текст и връща ParsedCommand с името
-# на командата и нейните аргументи.
-# Пример:
-# Вход:  "execute command read_file test.txt"
-# Изход: ParsedCommand(name="read_file", arguments=["test.txt"])
 def parse_command(text: str) -> ParsedCommand | None:
-   
+    """Парсва входния текст и връща ParsedCommand с името
+    на командата и нейните аргументи.
+
+    Пример:
+    Вход:  "execute command read_file test.txt"
+    Изход: ParsedCommand(name="read_file", arguments=["test.txt"])
+    """
+
     #  # Нормализира входния текст, като премахва празните символи в началото и края. Пример: Вход: "execute command read_file text.txt" 
     # резултат: "execute command read_file text.txt", без начални и крайни интервали.
 
