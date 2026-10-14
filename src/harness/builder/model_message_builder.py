@@ -10,12 +10,13 @@ from harness.domain.message import Message
 class ModelMessageBuilder:
 
     def compose_model_messages(self, messages: list[Message]) -> list[Message]:
-        """Prepare model context from all session messages.
+        """Обхожда всички съобщения и подготвя контекста за модела.
 
-        For messages with tool_results, use a summary when available or the
-        full output otherwise. Collect IDs for results without summaries and
-        instruct the model to summarize them. Do not modify the original
-        session messages.
+        За съобщенията с tool_results използва summary, ако съществува,
+        или пълния output, ако липсва.
+        Събира ID-тата на tool results без summary и добавя
+        инструкции към модела за тяхното обобщаване.
+        Не променя оригиналните съобщения от сесията.
         """
         model_messages: list[Message] = []
 
@@ -36,9 +37,9 @@ class ModelMessageBuilder:
         model_messages: list[Message],
         tool_result_output_requests: list[str],
     ) -> list[Message]:
-        """Update only contexts with explicitly requested full tool outputs.
+        """Обновява само контекстите с изрично поискани пълни tool outputs.
 
-        The original session messages remain unchanged.
+        Оригиналните съобщения от сесията остават непроменени.
         """
         if not tool_result_output_requests:
             return model_messages
@@ -73,11 +74,15 @@ class ModelMessageBuilder:
         messages: list[Message],
         model_messages: list[Message],
     ) -> list[str]:
-        """Add messages with processed tool results to model_messages.
+        """Обхожда всички съобщения и проверява дали съдържат tool_results.
 
-        Use each ToolResult summary when available. Otherwise, use its full
-        output and collect its ID for later summarization. Add messages without
-        tool results unchanged and do not modify the original session messages.
+        Ако има tool_results, обхожда всеки ToolResult.
+        Ако ToolResult има валидно summary, използва него вместо пълния output.
+        Ако няма summary, използва пълния output и добавя result.id
+        в tool_result_ids_to_summarize за последващо обобщаване.
+        Добавя обработеното съобщение в model_messages.
+        Ако съобщението няма tool_results, го добавя без промяна.
+        Не променя оригиналните съобщения от сесията.
         """
         tool_result_ids_to_summarize: list[str] = []
 
@@ -106,10 +111,13 @@ class ModelMessageBuilder:
         model_messages: list[Message],
         tool_result_ids_to_summarize: list[str],
     ) -> None:
-        """Add instructions for ToolResult IDs that need summaries.
+        """Проверява дали има ToolResult ID-та, които трябва да бъдат обобщени.
 
-        Use the already collected tool_result_ids_to_summarize. Do not scan the
-        messages again, process tool output, or modify the session messages.
+        Използва вече събраните ID-та в tool_result_ids_to_summarize.
+        Ако има такива ID-та, добавя към model_messages инструкция,
+        която указва на модела за кои ToolResult-и трябва да генерира summary.
+        Не обхожда повторно всички съобщения и не обработва tool output.
+        Не променя оригиналните съобщения в сесията.
         """
         if not tool_result_ids_to_summarize:
             return
