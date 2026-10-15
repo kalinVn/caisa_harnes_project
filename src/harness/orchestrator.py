@@ -4,6 +4,7 @@ from harness.builder.command_response_format_context_builder import (
     build_command_response_format_context,
     build_command_response_retry_context,
 )
+from harness.domain.loop_state import LoopState
 from harness.builder.tool_call_context_builder import build_tool_calls_context
 from harness.builder.tools_schema_builder import TOOLS_CONTEXT_HEADER
 from harness.parser.command_response_parser import parse_command_response
@@ -77,9 +78,7 @@ class Orchestrator:
         self,
         request: Request,
     ) -> str:
-        tool_steps = 0
-        command_response_retries = 0
-        tool_result_output_request_steps = 0
+        state = LoopState()
         
         if not request.message.strip():
             return "Please enter a message."
@@ -87,97 +86,111 @@ class Orchestrator:
         session = self._session_manager.current_session
         user_message = Message(role="user", content=request.message)
         session.add_message(user_message)
-        parsed_command = parse_command(request.message)
+        state.parsed_command = parse_command(request.message)
 
-        # Подготвя съобщенията за модела, добавя временни инструкции и контекст за команда,
-        # без да променя историята на сесията.Ako съобщението е команда
-        model_messages = self._create_model_messages(
-            session.messages,
-            parsed_command,
+      
+        state.model_messages = self._create_model_messages(session.messages, state.parsed_command)
+
+        self._loop(state, session)
+   
+
+    def _loop(self, state, session):
+        state.response = self._model_client.generate(state.model_messages)
+                    
+        session.apply_tool_result_summaries(state.response.tool_result_summaries)
+        requested_tool_result_ids = self._get_requested_tool_result_ids(
+            session,
+            state.response,
         )
-        
-        while True:
-            response = self._model_client.generate(model_messages)
-            
-            session.apply_tool_result_summaries(response.tool_result_summaries)
-            requested_tool_result_ids = self._get_requested_tool_result_ids(session, response)
 
-            if not response.tool_calls:
-                updated_model_messages, model_messages_updated = (
-                    self._update_model_messages_by_requested_tool_result_ids(
-                        model_messages,
-                        requested_tool_result_ids,
-                    )
-                )
+        if not state.response.tool_calls: 
+            return self._handle_without_tool_results(state, session, requested_tool_result_ids)
+        else:
+            return self._handle_with_tool_calls(state, session, requested_tool_result_ids)
 
-                if model_messages_updated:
-                    if tool_result_output_request_steps >= self.MAX_TOOL_RESULT_OUTPUT_REQUEST_STEPS:
-                        message = (
-                            "Maximum tool result output request steps "
-                            "exceeded."
-                        )
-                        session.add_message(Message(role="assistant", content=message))
 
-                        return message
-
-                    tool_result_output_request_steps += 1
-                    model_messages = updated_model_messages
-
-                    continue
-
-               
-                result = self._handle_response_without_tool_calls(
-                    session,
-                    response,
-                    parsed_command,
-                    command_response_retries,
-                )
-
-                if isinstance(result, str):
-                    return result
-                
-                command_response_retries += 1
-                model_messages = result
-
-                continue
-
-            if tool_steps >= self.MAX_TOOL_STEPS:
-
-                message = "Maximum tool execution steps exceeded."
-                session.add_message(Message(role="assistant", content=message))
-
-                return message
-            
-            session.add_message(
-                Message(
-                    role="assistant",
-                    content=build_tool_calls_context(response.tool_calls),
-                )
-            )
-
-            tool_results = self._execute_tool_calls(response.tool_calls)
-
-            session.add_message(
-                Message(
-                    role="user",
-                    content=build_tool_results_context(tool_results),
-                    tool_results=tuple(tool_results),
-                )
-            )
-
-            tool_steps += 1
-            
-            model_messages = self._create_model_messages(
-                session.messages,
-                parsed_command,
-            )
-
-            model_messages, _ = (
+    def _handle_without_tool_results(self, state, session ,requested_tool_result_ids):
+            updated_model_messages = (
                 self._update_model_messages_by_requested_tool_result_ids(
-                    model_messages,
+                    state.model_messages,
                     requested_tool_result_ids,
                 )
             )
+
+            if updated_model_messages != state.model_messages:
+                if state.tool_result_output_request_steps >= self.MAX_TOOL_RESULT_OUTPUT_REQUEST_STEPS:
+                    message = (
+                        "Maximum tool result output request steps "
+                        "exceeded."
+                    )
+                    session.add_message(Message(role="assistant", content=message))
+
+                    return message
+
+                state.tool_result_output_request_steps += 1
+                state.model_messages = updated_model_messages
+
+                return self._loop(state, session)
+                
+
+
+            result = self._handle_response_without_tool_calls(
+                session,
+                state.response,
+                state.parsed_command,
+                state,
+            )
+
+            if isinstance(result, str):
+                return result
+            
+            state.command_response_retries += 1
+            state.model_messages = result
+
+            return self._loop(state, session)
+
+            
+    def _handle_with_tool_calls(self, state, session, requested_tool_result_ids):
+
+        if state.tool_steps >= self.MAX_TOOL_STEPS:
+
+            message = "Maximum tool execution steps exceeded."
+            session.add_message(Message(role="assistant", content=message))
+
+            return message
+        
+        session.add_message(
+            Message(
+                role="assistant",
+                content=build_tool_calls_context(state.response.tool_calls),
+            )
+        )
+
+        tool_results = self._execute_tool_calls(state.response.tool_calls)
+
+        session.add_message(
+            Message(
+                role="user",
+                content=build_tool_results_context(tool_results),
+                tool_results=tuple(tool_results),
+            )
+        )
+
+        state.tool_steps += 1
+        
+        state.model_messages = self._create_model_messages(
+            session.messages,
+            state.parsed_command,
+        )
+
+        state.model_messages = (
+            self._update_model_messages_by_requested_tool_result_ids(
+                state.model_messages,
+                requested_tool_result_ids,
+            )
+        )
+
+        self._loop(state, session)
 
     def _get_requested_tool_result_ids(
         self,
@@ -198,10 +211,10 @@ class Orchestrator:
         self,
         model_messages: list[Message],
         requested_tool_result_ids: list[str],
-    ) -> tuple[list[Message], bool]:
-        """Връща обновените съобщения и флаг дали са променени."""
+    ) -> list[Message]:
+        """Връща обновените съобщения."""
         if not requested_tool_result_ids:
-            return model_messages, False
+            return model_messages
 
         updated_messages = (
             self._model_messages_builder
@@ -211,14 +224,14 @@ class Orchestrator:
             )
         )
 
-        return updated_messages, updated_messages is not model_messages
+        return updated_messages
 
     def _handle_response_without_tool_calls(
         self,
         session: Session,
         response: ModelResponse,
         parsed_command: ParsedCommand | None,
-        command_response_retries: int,
+        state,
     ) -> str | list[Message]:
         """ str: финален отговор към потребителя, напр. "Файлът е прочетен успешно."
             list[Message]: нов контекст с инструкция за поправка на JSON;
@@ -254,7 +267,7 @@ class Orchestrator:
         # записваме съобщението в историята и връщаме текста към потребителя
         # връщаме стринг message и добавяме в Message(role="assistant", content=message)
         #  в session messages
-        if command_response_retries >= self.MAX_COMMAND_RESPONSE_RETRIES:
+        if state.command_response_retries >= self.MAX_COMMAND_RESPONSE_RETRIES:
             message = (
                 "Command response remained invalid after "
                 f"{self.MAX_COMMAND_RESPONSE_RETRIES} retries."
@@ -267,7 +280,6 @@ class Orchestrator:
 
         model_messages = self._create_model_messages(
             session.messages,
-            parsed_command,
             include_tools=False,
         )
         model_messages.append(build_command_response_retry_context())
@@ -333,7 +345,7 @@ class Orchestrator:
         if parsed_command is not None:
             response_format_instruction.append(build_command_response_format_context())
             command_message = get_command_message_obj(
-                parsed_command.name,
+                state.parsed_command.name,
                 command_resolver=self._command_resolver,
                 tool_registry=self._tool_registry,
                 command_loader=self._command_loader,
