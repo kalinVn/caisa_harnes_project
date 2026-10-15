@@ -91,7 +91,7 @@ class Orchestrator:
       
         state.model_messages = self._create_model_messages(session.messages, state.parsed_command)
 
-        self._loop(state, session)
+        return self._loop(state, session)
    
 
     def _loop(self, state, session):
@@ -190,7 +190,7 @@ class Orchestrator:
             )
         )
 
-        self._loop(state, session)
+        return self._loop(state, session)
 
     def _get_requested_tool_result_ids(
         self,
@@ -345,7 +345,7 @@ class Orchestrator:
         if parsed_command is not None:
             response_format_instruction.append(build_command_response_format_context())
             command_message = get_command_message_obj(
-                state.parsed_command.name,
+                parsed_command.name,
                 command_resolver=self._command_resolver,
                 tool_registry=self._tool_registry,
                 command_loader=self._command_loader,
