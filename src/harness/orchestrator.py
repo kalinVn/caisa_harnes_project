@@ -4,10 +4,9 @@ from harness.builder.command_response_format_context_builder import (
     build_command_response_format_context,
     build_command_response_retry_context,
 )
-from harness.builder.tool_call_context_builder import build_tool_calls_context
+from harness.domain.loop_state import LoopState
 from harness.builder.tools_schema_builder import TOOLS_CONTEXT_HEADER
 from harness.parser.command_response_parser import parse_command_response
-from harness.builder.tool_result_context_builder import build_tool_results_context
 from harness.loader.command_context_loader import get_command_message_obj
 from harness.loader.command_loader import (
     CommandLoader,
@@ -25,8 +24,8 @@ from harness.session_manager import (
 from harness.models.request import Request
 from harness.domain.message import Message
 from harness.domain.session import Session
-from harness.domain.tool_call import ToolCall
 from harness.domain.tool_result import ToolResult
+from harness.service.tool_service import ToolService
 from harness.tools.tool_registry import (
     ToolRegistry,
 )
@@ -67,6 +66,11 @@ class Orchestrator:
         self._command_loader = CommandLoader()
         self._tool_registry = ToolRegistry()
         register_tools(self._tool_registry, working_directory=self._project_root)
+        self._tool_service = ToolService(
+            tool_registry=self._tool_registry,
+            model_message_builder=self._model_messages_builder,
+            on_tool_result=self._on_tool_result,
+        )
         self._session_manager = SessionManager(
             project_root=self._project_root,
             tool_registry=self._tool_registry,
@@ -77,149 +81,151 @@ class Orchestrator:
         self,
         request: Request,
     ) -> str:
-        tool_steps = 0
-        command_response_retries = 0
-        tool_result_output_request_steps = 0
-        
+        state = LoopState()
+
         if not request.message.strip():
             return "Please enter a message."
         
         session = self._session_manager.current_session
         user_message = Message(role="user", content=request.message)
         session.add_message(user_message)
-        parsed_command = parse_command(request.message)
+        state.parsed_command = parse_command(request.message)
 
-        # Prepare model messages with temporary instructions and command
-        # context without modifying the session history.
-        model_messages = self._create_model_messages(
-            session.messages,
-            parsed_command,
+      
+        state.model_messages = self._create_model_messages(session.messages, state.parsed_command)
+
+        return self._loop(state, session)
+   
+
+    def _loop(self, state, session):
+        state.response = self._model_client.generate(state.model_messages)
+                    
+        session.apply_tool_result_summaries(state.response.tool_result_summaries)
+        requested_tool_result_ids = self._tool_service.get_requested_tool_result_ids(
+            session,
+            state.response,
         )
-        
-        while True:
-            response = self._model_client.generate(model_messages)
-            
-            session.apply_tool_result_summaries(response.tool_result_summaries)
-            requested_tool_result_ids: list[str] = []
-            
-            for result_id in response.tool_result_output_requests:
-                tool_result = session.get_tool_result_by_id(result_id)
-                if tool_result is not None:
-                    requested_tool_result_ids.append(tool_result.id)
 
-            if not response.tool_calls:
-                if requested_tool_result_ids:
-                    updated_model_messages = (
-                        self._model_messages_builder
-                        .update_model_messages_by_tool_result_output_requests_ids(
-                            model_messages=model_messages,
-                            tool_result_output_requests=(
-                                requested_tool_result_ids
-                            ),
-                        )
-                    )
+        if not state.response.tool_calls: 
+            return self._handle_without_tool_results(state, session, requested_tool_result_ids)
+        else:
+            return self._handle_with_tool_calls(state, session, requested_tool_result_ids)
 
-                    if updated_model_messages is not model_messages:
-                        if tool_result_output_request_steps >= self.MAX_TOOL_RESULT_OUTPUT_REQUEST_STEPS:
-                            message = (
-                                "Maximum tool result output request steps "
-                                "exceeded."
-                            )
-                            session.add_message(
-                                Message(role="assistant", content=message)
-                            )
-                            return message
 
-                        tool_result_output_request_steps += 1
-                        model_messages = updated_model_messages
-                        continue
-
-                # A str is the final user response. A list[Message] is updated
-                # context with JSON correction instructions for the next call.
-                result = self._handle_response_without_tool_calls(
-                    session,
-                    response,
-                    parsed_command,
-                    command_response_retries,
+    def _handle_without_tool_results(self, state, session ,requested_tool_result_ids):
+            updated_model_messages = (
+                self._tool_service.update_model_messages_by_requested_tool_result_ids(
+                    state.model_messages,
+                    requested_tool_result_ids,
                 )
+            )
 
-                if isinstance(result, str):
-                    return result
+            if updated_model_messages != state.model_messages:
+                if state.tool_result_output_request_steps >= self.MAX_TOOL_RESULT_OUTPUT_REQUEST_STEPS:
+                    message = (
+                        "Maximum tool result output request steps "
+                        "exceeded."
+                    )
+                    session.add_message(Message(role="assistant", content=message))
+
+                    return message
+
+                state.tool_result_output_request_steps += 1
+                state.model_messages = updated_model_messages
+
+                return self._loop(state, session)
                 
-                command_response_retries += 1
-                model_messages = result
 
-                continue
 
-            if tool_steps >= self.MAX_TOOL_STEPS:
+            result = self._handle_response_without_tool_calls(
+                session,
+                state.response,
+                state.parsed_command,
+                state,
+            )
 
-                message = "Maximum tool execution steps exceeded."
-                session.add_message(Message(role="assistant", content=message))
-
-                return message
+            if isinstance(result, str):
+                return result
             
-            session.add_message(
-                Message(
-                    role="assistant",
-                    content=build_tool_calls_context(response.tool_calls),
-                )
-            )
+            state.command_response_retries += 1
+            state.model_messages = result
 
-            tool_results = self._execute_tool_calls(response.tool_calls)
+            return self._loop(state, session)
 
-            session.add_message(
-                Message(
-                    role="user",
-                    content=build_tool_results_context(tool_results),
-                    tool_results=tuple(tool_results),
-                )
-            )
-
-            tool_steps += 1
             
-            model_messages = self._create_model_messages(
-                session.messages,
-                parsed_command,
-            )
+    def _handle_with_tool_calls(self, state, session, requested_tool_result_ids):
 
-            if requested_tool_result_ids:
-                model_messages = (self._model_messages_builder.update_model_messages_by_tool_result_output_requests_ids(
-                        model_messages=model_messages,
-                        tool_result_output_requests=(
-                            requested_tool_result_ids
-                        )
-                    )
-                )
+        if state.tool_steps >= self.MAX_TOOL_STEPS:
+
+            message = "Maximum tool execution steps exceeded."
+            session.add_message(Message(role="assistant", content=message))
+
+            return message
+        
+        tool_call_message = self._tool_service.prepare_tool_call_message(
+            state.response.tool_calls,
+        )
+        session.add_message(tool_call_message)
+
+        tool_results = self._tool_service.execute_tool_calls(
+            state.response.tool_calls,
+        )
+
+        tool_result_message = self._tool_service.prepare_tool_result_message(
+            tool_results,
+        )
+        session.add_message(tool_result_message)
+
+        state.tool_steps += 1
+        
+        state.model_messages = self._create_model_messages(
+            session.messages,
+            state.parsed_command,
+        )
+
+        state.model_messages = (
+            self._tool_service.update_model_messages_by_requested_tool_result_ids(
+                state.model_messages,
+                requested_tool_result_ids,
+            )
+        )
+
+        return self._loop(state, session)
 
     def _handle_response_without_tool_calls(
         self,
         session: Session,
         response: ModelResponse,
         parsed_command: ParsedCommand | None,
-        command_response_retries: int,
+        state,
     ) -> str | list[Message]:
-        # For a regular message, store the response without command handling.
+        """Handle a response that contains no tool calls.
+
+        Return the final user-facing string, or a new message context with a
+        JSON correction instruction for the next model iteration.
+        """
+        # When there is no command, store and return the plain response text.
         if parsed_command is None:
             self._add_response_message(session, response)
             return response.text
 
-        # Parse the command response and verify that it has the expected form.
+        # Parse the response and verify that it has the expected command format.
         parsed_response = parse_command_response(response.text)
 
+        # A valid command response contains both the answer and command summary.
         if parsed_response is not None:
 
             answer, command_summary = parsed_response
 
-            # Store command_summary as a system message.
+            # Store the command summary as a system message.
             self._add_command_summary_message(session, parsed_command, command_summary)
             session.add_message(Message(role="assistant", content=answer))
 
             # Return the final text intended for the user.
             return answer
 
-        # After all correction attempts are exhausted, store and return an
-        # error message.
-        if command_response_retries >= self.MAX_COMMAND_RESPONSE_RETRIES:
+        # If correction attempts are exhausted, store and return the limit message.
+        if state.command_response_retries >= self.MAX_COMMAND_RESPONSE_RETRIES:
             message = (
                 "Command response remained invalid after "
                 f"{self.MAX_COMMAND_RESPONSE_RETRIES} retries."
@@ -232,38 +238,12 @@ class Orchestrator:
 
         model_messages = self._create_model_messages(
             session.messages,
-            parsed_command,
+            state.parsed_command,
             include_tools=False,
         )
         model_messages.append(build_command_response_retry_context())
 
         return model_messages
-
-    def _execute_tool_calls(
-        self,
-        tool_calls: list[ToolCall],
-    ) -> list[ToolResult]:
-        tool_results: list[ToolResult] = []
-        for tool_call in tool_calls:
-            try:
-                output = self._tool_registry.execute(
-                    tool_call.name,
-                    tool_call.arguments,
-                )
-                tool_result = ToolResult(
-                    name=tool_call.name,
-                    output=output,
-                )
-            except Exception as error:
-                tool_result = ToolResult(
-                    name=tool_call.name,
-                    output=str(error),
-                    success=False,
-                )
-            tool_results.append(tool_result)
-            if self._on_tool_result is not None:
-                self._on_tool_result(tool_result)
-        return tool_results
 
     def _create_model_messages(
         self,
@@ -271,17 +251,14 @@ class Orchestrator:
         parsed_command: ParsedCommand | None,
         include_tools: bool = True,
     ) -> list[Message]:
-        """Build model messages for the current request.
+        """Create model messages for the current request.
 
-        For commands, add a temporary system message describing the required
-        final response format and append the resolved command context. These
-        temporary messages apply only to the current call and are not stored in
-        the session history. Tool definitions can be excluded for correction
-        retries.
+        For commands, add a temporary system message that defines the final
+        response format. This instruction applies only to the current model
+        call and is not stored in the session history.
         """
         command_message = None
-        # Add a per-call format instruction for command responses without
-        # storing it in the session history.
+        # Add a temporary command-response format instruction for this model call.
         response_format_instruction: list[Message] = []
         if parsed_command is not None:
             response_format_instruction.append(build_command_response_format_context())
@@ -307,10 +284,11 @@ class Orchestrator:
         )
         if command_message is not None:
             model_messages.append(command_message)
+
         return model_messages
 
     def _add_response_message(self, session: Session, response: ModelResponse) -> None:
-        """Store a regular final response that is not associated with a command."""
+        """Store a plain final response that is not associated with a command."""
 
         session.add_message(
             Message(
@@ -318,6 +296,7 @@ class Orchestrator:
                 content=response.text,
             )
         )
+
     def _add_command_summary_message(
         self,
         session: Session,

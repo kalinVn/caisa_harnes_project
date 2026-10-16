@@ -119,7 +119,7 @@ class GroqProviderTest(unittest.TestCase):
                 self.reply(calls=[call])
 
     def test_invalid_empty_truncated_and_ambiguous_responses(self):
-        for content in (None, '', 'hello', '{}', '{"text":"Hello"}',
+        for content in (None, '', '{}', '{"text":"Hello"}',
                         '{"text":"","tool_calls":[{"tool":"bash","arguments":{}}],"tool_result_summaries":[]}'):
             with self.subTest(content=content), self.assertRaises(ValueError):
                 self.reply(content)
@@ -132,7 +132,7 @@ class GroqProviderTest(unittest.TestCase):
     def test_invalid_response_is_retried_with_format_correction(self):
         invalid = SimpleNamespace(choices=[SimpleNamespace(
             finish_reason='stop',
-            message=SimpleNamespace(content='plain text', tool_calls=None),
+            message=SimpleNamespace(content='{"unexpected":"shape"}', tool_calls=None),
         )])
         valid = SimpleNamespace(choices=[SimpleNamespace(
             finish_reason='stop',
@@ -148,30 +148,52 @@ class GroqProviderTest(unittest.TestCase):
         self.assertEqual(retry_messages[-1]['role'], 'system')
         self.assertIn('native function call', retry_messages[-1]['content'])
         self.assertEqual(self.create.call_args_list[1].kwargs['temperature'], 0)
+        self.assertNotIn('response_format', self.create.call_args_list[1].kwargs)
 
-    def test_direct_command_json_is_retried_with_outer_envelope_example(self):
+    def test_plain_text_normal_response_is_normalized_without_retry(self):
+        response = self.reply('Yes, I can help you.')
+
+        self.assertEqual(response, ModelResponse(text='Yes, I can help you.'))
+        self.assertEqual(self.create.call_count, 1)
+
+    def test_direct_command_json_is_normalized_without_retry(self):
         self.messages.append(build_command_response_format_context())
         inner = json.dumps({
             'answer': 'Done',
             'command_summary': 'The command completed.',
         })
-        invalid = SimpleNamespace(choices=[SimpleNamespace(
+        self.create.return_value = SimpleNamespace(choices=[SimpleNamespace(
             finish_reason='stop',
             message=SimpleNamespace(content=inner, tool_calls=None),
         )])
-        valid = SimpleNamespace(choices=[SimpleNamespace(
-            finish_reason='stop',
-            message=SimpleNamespace(content=envelope(inner), tool_calls=None),
-        )])
-        self.create.side_effect = [invalid, valid]
 
         self.assertEqual(self.client.generate(self.messages).text, inner)
+        self.assertEqual(self.create.call_count, 1)
 
-        retry_instruction = (
-            self.create.call_args_list[1].kwargs['messages'][-1]['content']
-        )
-        self.assertIn('command_summary', retry_instruction)
-        self.assertIn('outer JSON shape', retry_instruction)
+    def test_invalid_direct_command_json_still_uses_bounded_retries(self):
+        self.messages.append(build_command_response_format_context())
+        invalid = json.dumps({'answer': 'Missing summary'})
+        self.create.return_value = SimpleNamespace(choices=[SimpleNamespace(
+            finish_reason='stop',
+            message=SimpleNamespace(content=invalid, tool_calls=None),
+        )])
+
+        with self.assertRaisesRegex(ValueError, 'invalid model response after 2 retries'):
+            self.client.generate(self.messages)
+
+        self.assertEqual(self.create.call_count, 3)
+
+    def test_plain_text_command_response_is_not_normalized(self):
+        self.messages.append(build_command_response_format_context())
+        self.create.return_value = SimpleNamespace(choices=[SimpleNamespace(
+            finish_reason='stop',
+            message=SimpleNamespace(content='The file was created.', tool_calls=None),
+        )])
+
+        with self.assertRaisesRegex(ValueError, 'invalid model response after 2 retries'):
+            self.client.generate(self.messages)
+
+        self.assertEqual(self.create.call_count, 3)
 
     def test_result_history_and_original_ids_survive_next_turn(self):
         result = ToolResult(name='read_file', output='Example contents')

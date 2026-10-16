@@ -12,10 +12,9 @@ class ModelMessageBuilder:
     def compose_model_messages(self, messages: list[Message]) -> list[Message]:
         """Prepare model context from all session messages.
 
-        For messages with tool_results, use a summary when available or the
-        full output otherwise. Collect IDs for results without summaries and
-        instruct the model to summarize them. Do not modify the original
-        session messages.
+        For messages with tool results, use summaries when available and full
+        output otherwise. Collect result IDs without summaries and add model
+        instructions for summarizing them. Session messages remain unchanged.
         """
         model_messages: list[Message] = []
 
@@ -36,7 +35,7 @@ class ModelMessageBuilder:
         model_messages: list[Message],
         tool_result_output_requests: list[str],
     ) -> list[Message]:
-        """Update only contexts with explicitly requested full tool outputs.
+        """Expose only explicitly requested full tool outputs.
 
         The original session messages remain unchanged.
         """
@@ -73,11 +72,12 @@ class ModelMessageBuilder:
         messages: list[Message],
         model_messages: list[Message],
     ) -> list[str]:
-        """Add messages with processed tool results to model_messages.
+        """Add processed messages and collect IDs that need summaries.
 
-        Use each ToolResult summary when available. Otherwise, use its full
-        output and collect its ID for later summarization. Add messages without
-        tool results unchanged and do not modify the original session messages.
+        For each tool result, use its valid summary when present. Otherwise,
+        use the full output and collect its ID for later summarization.
+        Messages without tool results are added unchanged. Original session
+        messages are not modified.
         """
         tool_result_ids_to_summarize: list[str] = []
 
@@ -106,10 +106,10 @@ class ModelMessageBuilder:
         model_messages: list[Message],
         tool_result_ids_to_summarize: list[str],
     ) -> None:
-        """Add instructions for ToolResult IDs that need summaries.
+        """Add summary instructions for the collected tool-result IDs.
 
-        Use the already collected tool_result_ids_to_summarize. Do not scan the
-        messages again, process tool output, or modify the session messages.
+        This uses the already collected IDs without scanning messages again
+        or processing tool output. Original session messages remain unchanged.
         """
         if not tool_result_ids_to_summarize:
             return

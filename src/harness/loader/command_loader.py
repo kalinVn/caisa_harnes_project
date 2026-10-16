@@ -54,14 +54,13 @@ class CommandLoader:
         sections: dict[str, list[str]] = {}
         current_section: str | None = None
 
-        # Split the text content into individual lines with splitlines().
-        # Example:
-        # content = "apple\nbanana"
+        # Split the text content into individual lines.
+        # Example: content = "apple\nbanana"
         # content.splitlines() -> ["apple", "banana"]
         file_lines = content.splitlines()
 
         # Remove empty or whitespace-only strings from the list.
-        # For example, ["apple", "", "banana", "  "] becomes
+        # Example: ["apple", "", "banana", "  "] becomes
         # ["apple", "banana"].
         file_lines = [line for line in file_lines if line.strip()]
 
@@ -73,8 +72,8 @@ class CommandLoader:
                 sections[current_section] = []
                 continue
 
-            # A line without the "# " prefix is appended to the current
-            # section. For example, when current_section is "name":
+            # A line that does not start with "# " belongs to the current section.
+            # For example, if current_section = "name":
             # sections['name'].append('test-write-file')
             if current_section is not None:
                 sections[current_section].append(line)
