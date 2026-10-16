@@ -1,13 +1,57 @@
 from dataclasses import replace
 
+from harness.builder.command_response_format_context_builder import (
+    build_command_response_format_context,
+)
 from harness.builder.tool_result_context_builder import (
     build_tool_results_context,
     has_tool_result_summary,
 )
+from harness.builder.tools_schema_builder import TOOLS_CONTEXT_HEADER
 from harness.domain.message import Message
+from harness.parser.command_parser import ParsedCommand
+from harness.service.command_service import CommandService
 
 
 class ModelMessageBuilder:
+
+    def create_model_messages(
+        self,
+        session_messages: list[Message],
+        parsed_command: ParsedCommand | None,
+        command_service: CommandService,
+        include_tools: bool = True,
+    ) -> list[Message]:
+        """Build the complete message list for the next model request."""
+        response_format_instruction: list[Message] = []
+        command_message = None
+
+        if parsed_command is not None:
+            response_format_instruction.append(
+                build_command_response_format_context()
+            )
+            command_message = command_service.prepare_command_context(
+                parsed_command
+            )
+
+        messages_for_model = session_messages
+        if not include_tools:
+            messages_for_model = [
+                message
+                for message in session_messages
+                if not (
+                    message.role == "system"
+                    and message.content.startswith(TOOLS_CONTEXT_HEADER)
+                )
+            ]
+
+        model_messages = self.compose_model_messages(
+            messages_for_model + response_format_instruction
+        )
+        if command_message is not None:
+            model_messages.append(command_message)
+
+        return model_messages
 
     def compose_model_messages(self, messages: list[Message]) -> list[Message]:
         """Prepare model context from all session messages.

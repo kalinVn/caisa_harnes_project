@@ -69,7 +69,7 @@ caisa_harnes_project/
 │   │   ├── register_tools.py
 │   │   ├── tool_registry.py
 │   │   └── write_file_tool.py
-│   ├── orchestrator.py
+│   ├── agents/main_orchestrator.py
 │   └── session_manager.py
 └── tests/
     ├── evals/
@@ -92,7 +92,7 @@ caisa_harnes_project/
 ## Current implementation summary
 
 The project currently implements a small, stateful command-line AI harness. A
-single `Orchestrator` keeps the conversation in memory, optionally loads a Markdown
+single `MainOrchestrator` keeps the conversation in memory, optionally loads a Markdown
 command from `.caisa/commands/`, and sends the accumulated messages to Gemini
 or OpenAI. Most of the larger architecture shown above is scaffolding: many
 agent, workflow, API, infrastructure, and tool modules are currently empty.
@@ -102,15 +102,15 @@ agent, workflow, API, infrastructure, and tool modules are currently empty.
 | Object or function | Location | Responsibility and current logic |
 |---|---|---|
 | `Request` | `app/models/request.py` | Immutable application input containing the user's message and a UTC creation timestamp. `Request.create()` supplies the timestamp. |
-| `Orchestrator` | `app/orchestrator.py` | Central application orchestrator. Owns one in-memory `Session`, command services, and a tool registry. Validates input, stores messages, loads optional command context, calls the selected model, and stores the response. |
-| `ParsedCommand` / `parse_command()` | `app/parser/command_parser.py` | Recognizes input beginning with `execute command` (case-insensitive), separates the command name and arguments, and rejects a missing command name. Arguments are parsed but are not used by `Orchestrator` yet. |
+| `MainOrchestrator` | `harness/agents/main_orchestrator.py` | Central application orchestrator. Owns one in-memory `Session`, command services, and a tool registry. Validates input, stores messages, loads optional command context, calls the selected model, and stores the response. |
+| `ParsedCommand` / `parse_command()` | `app/parser/command_parser.py` | Recognizes input beginning with `execute command` (case-insensitive), separates the command name and arguments, and rejects a missing command name. Arguments are parsed but are not used by `MainOrchestrator` yet. |
 | `CommandResolver` | `app/resolver/command_resolver.py` | Maps a command name to `.caisa/commands/<name>.md` and rejects unknown commands. |
 | `CommandLoader` | `app/loader/command_loader.py` | Parses Markdown sections headed by `# `. Requires `Name` and `Description`; stores every other section in `Command.sections`. |
 | `Command` | `app/domain/command.py` | Immutable command definition: name, description, and additional Markdown sections. |
 | `Message` | `app/domain/message.py` | Immutable conversation message. Its role is restricted to `user`, `assistant`, or `system`. |
-| `Session` | `app/domain/session.py` | Mutable in-memory conversation with a generated UUID and ordered messages. It is created once per `Orchestrator`; there is no persistence or reset behavior yet. |
+| `Session` | `app/domain/session.py` | Mutable in-memory conversation with a generated UUID and ordered messages. It is created once per `MainOrchestrator`; there is no persistence or reset behavior yet. |
 | `ToolCall` | `app/domain/tool_call.py` | Immutable name-and-arguments representation for a future model-requested tool call. It is not connected to the model loop yet. |
-| `ModelClient` | `app/models/model_client.py` | Provider-neutral protocol requiring `generate(messages) -> str`. This is the boundary used by `Orchestrator`. |
+| `ModelClient` | `app/models/model_client.py` | Provider-neutral protocol requiring `generate(messages) -> str`. This is the boundary used by `MainOrchestrator`. |
 | `create_model_client()` | `factory/model_client_factory.py` | Selects Gemini for `google`/`gemini` (the default) or OpenAI for `openai`, using `MODEL_PROVIDER`. Other values fail immediately. |
 | `GeminiClient` | `providers/google_client.py` | Reads `GEMINI_API_KEY` and optional `GEMINI_MODEL`, maps messages to the Google SDK, calls `generate_content`, and converts HTTP 429 errors into `ModelRateLimitError`. |
 | Google `map_messages()` | `mappers/google_mapper.py` | Converts assistant messages to Gemini's `model` role, keeps user messages as `user`, and combines all system messages into one system instruction. |
@@ -119,7 +119,7 @@ agent, workflow, API, infrastructure, and tool modules are currently empty.
 | `ModelRateLimitError` | `app/models/errors.py` | Provider-neutral error currently used for Gemini quota/rate-limit failures and handled by the packaged CLI. |
 | `Tool` | `contracts/tool.py` | Protocol for named tools with a description and `execute(arguments) -> str`. |
 | `ToolRegistry` | `app/tools/tool_registry.py` | Registers unique tools, resolves tools by name, executes them, and lists registered instances. |
-| `register_tools()` | `app/tools/register_tools.py` | Registers `ReadFileTool` and `WriteFileTool` in each `Orchestrator`. |
+| `register_tools()` | `app/tools/register_tools.py` | Registers `ReadFileTool` and `WriteFileTool` in each `MainOrchestrator`. |
 | `ReadFileTool` | `tools/read_file_tool.py` | Validates a string path, requires an existing file, and returns its UTF-8 text. The runner uses it internally to load command files. |
 | `WriteFileTool` | `tools/write_file_tool.py` | Validates path/content strings, creates parent directories, writes UTF-8 text, and returns a success message. It is registered but cannot currently be invoked by a model response. |
 | `read_input()` | `app/cli/reader.py` | Reads and trims one terminal message. EOF or Ctrl+C is converted into `exit`. |
@@ -134,13 +134,13 @@ flowchart TD
     C -->|google / gemini| D[Create GeminiClient]
     C -->|openai| E[Create OpenAIClient]
     C -->|other| X[Raise ValueError]
-    D --> F[Create Orchestrator and Session]
+    D --> F[Create MainOrchestrator and Session]
     E --> F
     F --> G[Read terminal input]
     G --> H{Input is exit?}
     H -->|yes| Z[Stop]
     H -->|no| I[Request.create]
-    I --> J[Orchestrator.handle]
+    I --> J[MainOrchestrator.handle]
     J --> K{Message empty?}
     K -->|yes| L[Return validation message]
     K -->|no| M[Append user Message to Session]
@@ -166,7 +166,7 @@ flowchart TD
 sequenceDiagram
     actor User
     participant CLI
-    participant Orchestrator
+    participant MainOrchestrator
     participant Parser as CommandParser
     participant Resolver as CommandResolver
     participant Registry as ToolRegistry
@@ -174,28 +174,28 @@ sequenceDiagram
     participant Model as ModelClient
 
     User->>CLI: execute command hello
-    CLI->>Orchestrator: handle(Request)
-    Orchestrator->>Orchestrator: append user message
-    Orchestrator->>Parser: parse_command(text)
-    Parser-->>Orchestrator: ParsedCommand(name, arguments)
-    Orchestrator->>Resolver: resolve(name)
-    Resolver-->>Orchestrator: command Markdown path
-    Orchestrator->>Registry: execute(read_file, path)
-    Registry-->>Orchestrator: Markdown content
-    Orchestrator->>Loader: load(content)
-    Loader-->>Orchestrator: Command
-    Orchestrator->>Orchestrator: append command as system context
-    Orchestrator->>Model: generate(all session messages)
-    Model-->>Orchestrator: response text
-    Orchestrator->>Orchestrator: append assistant message
-    Orchestrator-->>CLI: response text
+    CLI->>MainOrchestrator: handle(Request)
+    MainOrchestrator->>MainOrchestrator: append user message
+    MainOrchestrator->>Parser: parse_command(text)
+    Parser-->>MainOrchestrator: ParsedCommand(name, arguments)
+    MainOrchestrator->>Resolver: resolve(name)
+    Resolver-->>MainOrchestrator: command Markdown path
+    MainOrchestrator->>Registry: execute(read_file, path)
+    Registry-->>MainOrchestrator: Markdown content
+    MainOrchestrator->>Loader: load(content)
+    Loader-->>MainOrchestrator: Command
+    MainOrchestrator->>MainOrchestrator: append command as system context
+    MainOrchestrator->>Model: generate(all session messages)
+    Model-->>MainOrchestrator: response text
+    MainOrchestrator->>MainOrchestrator: append assistant message
+    MainOrchestrator-->>CLI: response text
     CLI-->>User: print response
 ```
 
 ## State and data flow
 
 1. The CLI converts raw terminal text into a timestamped `Request`.
-2. `Orchestrator` converts the request into a domain `Message` and appends it to its
+2. `MainOrchestrator` converts the request into a domain `Message` and appends it to its
    long-lived `Session`.
 3. Normal messages go directly to the model. Command messages first add a
    generated `system` message based on the selected Markdown command.
@@ -232,7 +232,7 @@ sequenceDiagram
 - The model can only return text. `ToolCall` is not parsed or executed, so a
   command that asks the model to use `write_file` cannot actually trigger it.
 - `.caisa/CAISA.md` is not loaded into the session even though a loader exists.
-- Parsed command arguments are discarded by `Orchestrator`.
+- Parsed command arguments are discarded by `MainOrchestrator`.
 - Command names are used to construct filesystem paths without explicit
   project-root containment validation.
 - Read/write tools accept unrestricted paths; the security scaffolding is empty.

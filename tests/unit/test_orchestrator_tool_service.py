@@ -5,22 +5,22 @@ from harness.domain.message import Message
 from harness.domain.tool_call import ToolCall
 from harness.models.request import Request
 from harness.models.response import ModelResponse
-from harness.orchestrator import Orchestrator
+from harness.agents.main_orchestrator import MainOrchestrator
 from harness.session_manager import SessionManager
 
 
-class OrchestratorToolServiceIntegrationTest(unittest.TestCase):
+class MainOrchestratorToolServiceIntegrationTest(unittest.TestCase):
     def create_orchestrator(
         self,
         client: Mock,
         on_tool_result=None,
-    ) -> Orchestrator:
+    ) -> MainOrchestrator:
         with patch.object(
             SessionManager,
             "_load_system_prompt",
             return_value="Instructions",
         ):
-            return Orchestrator(client, on_tool_result=on_tool_result)
+            return MainOrchestrator(client, on_tool_result=on_tool_result)
 
     def test_tool_service_reuses_orchestrator_dependencies(self):
         callback = Mock()
@@ -32,6 +32,50 @@ class OrchestratorToolServiceIntegrationTest(unittest.TestCase):
             runner._model_messages_builder,
         )
         self.assertIs(runner._tool_service._on_tool_result, callback)
+
+    def test_normal_response_is_added_to_session_and_returned(self):
+        client = Mock()
+        client.generate.return_value = ModelResponse(text="Hello")
+        runner = self.create_orchestrator(client)
+
+        result = runner.handle(Request.create("Hi"))
+
+        self.assertEqual(result, "Hello")
+        self.assertEqual(
+            runner._session_manager.current_session.messages[-1],
+            Message(role="assistant", content="Hello"),
+        )
+
+    def test_command_summary_precedes_final_answer(self):
+        client = Mock()
+        client.generate.return_value = ModelResponse(
+            text=(
+                '{"answer": "Done", '
+                '"command_summary": "Reviewed the project."}'
+            )
+        )
+        runner = self.create_orchestrator(client)
+
+        with patch(
+            "harness.service.command_service.get_command_message_obj",
+            return_value=Message(role="system", content="Command instructions"),
+        ):
+            result = runner.handle(Request.create("execute command review"))
+
+        self.assertEqual(result, "Done")
+        self.assertEqual(
+            runner._session_manager.current_session.messages[-2:],
+            [
+                Message(
+                    role="system",
+                    content=(
+                        "Command execution summary: review was executed. Result: "
+                        "Reviewed the project."
+                    ),
+                ),
+                Message(role="assistant", content="Done"),
+            ],
+        )
 
     def test_tool_messages_keep_execution_order_and_final_response(self):
         client = Mock()
@@ -103,7 +147,7 @@ class OrchestratorToolServiceIntegrationTest(unittest.TestCase):
         runner.MAX_COMMAND_RESPONSE_RETRIES = 1
 
         with patch(
-            "harness.orchestrator.get_command_message_obj",
+            "harness.service.command_service.get_command_message_obj",
             return_value=Message(role="system", content="Command instructions"),
         ):
             result = runner.handle(Request.create("execute command review"))

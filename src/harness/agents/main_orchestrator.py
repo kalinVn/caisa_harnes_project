@@ -1,13 +1,10 @@
 from collections.abc import Callable
 from pathlib import Path
 from harness.builder.command_response_format_context_builder import (
-    build_command_response_format_context,
     build_command_response_retry_context,
 )
 from harness.domain.loop_state import LoopState
-from harness.builder.tools_schema_builder import TOOLS_CONTEXT_HEADER
 from harness.parser.command_response_parser import parse_command_response
-from harness.loader.command_context_loader import get_command_message_obj
 from harness.loader.command_loader import (
     CommandLoader,
 )
@@ -25,6 +22,7 @@ from harness.models.request import Request
 from harness.domain.message import Message
 from harness.domain.session import Session
 from harness.domain.tool_result import ToolResult
+from harness.service.command_service import CommandService
 from harness.service.tool_service import ToolService
 from harness.tools.tool_registry import (
     ToolRegistry,
@@ -39,7 +37,7 @@ from harness.models.model_client import (
 from harness.models.response import ModelResponse
 
 
-class Orchestrator:
+class MainOrchestrator:
     MAX_TOOL_STEPS = 20
     MAX_COMMAND_RESPONSE_RETRIES = 2
     MAX_TOOL_RESULT_OUTPUT_REQUEST_STEPS = 3
@@ -66,6 +64,11 @@ class Orchestrator:
         self._command_loader = CommandLoader()
         self._tool_registry = ToolRegistry()
         register_tools(self._tool_registry, working_directory=self._project_root)
+        self._command_service = CommandService(
+            command_resolver=self._command_resolver,
+            command_loader=self._command_loader,
+            tool_registry=self._tool_registry,
+        )
         self._tool_service = ToolService(
             tool_registry=self._tool_registry,
             model_message_builder=self._model_messages_builder,
@@ -92,7 +95,11 @@ class Orchestrator:
         state.parsed_command = parse_command(request.message)
 
       
-        state.model_messages = self._create_model_messages(session.messages, state.parsed_command)
+        state.model_messages = self._model_messages_builder.create_model_messages(
+            session.messages,
+            state.parsed_command,
+            self._command_service,
+        )
 
         return self._loop(state, session)
    
@@ -178,9 +185,10 @@ class Orchestrator:
 
         state.tool_steps += 1
         
-        state.model_messages = self._create_model_messages(
+        state.model_messages = self._model_messages_builder.create_model_messages(
             session.messages,
             state.parsed_command,
+            self._command_service,
         )
 
         state.model_messages = (
@@ -206,7 +214,12 @@ class Orchestrator:
         """
         # When there is no command, store and return the plain response text.
         if parsed_command is None:
-            self._add_response_message(session, response)
+            session.add_message(
+                Message(
+                    role="assistant",
+                    content=response.text,
+                )
+            )
             return response.text
 
         # Parse the response and verify that it has the expected command format.
@@ -218,7 +231,13 @@ class Orchestrator:
             answer, command_summary = parsed_response
 
             # Store the command summary as a system message.
-            self._add_command_summary_message(session, parsed_command, command_summary)
+            command_summary_message = (
+                self._command_service.prepare_command_summary_message(
+                    parsed_command,
+                    command_summary,
+                )
+            )
+            session.add_message(command_summary_message)
             session.add_message(Message(role="assistant", content=answer))
 
             # Return the final text intended for the user.
@@ -236,81 +255,12 @@ class Orchestrator:
             return message
 
 
-        model_messages = self._create_model_messages(
+        model_messages = self._model_messages_builder.create_model_messages(
             session.messages,
             state.parsed_command,
+            self._command_service,
             include_tools=False,
         )
         model_messages.append(build_command_response_retry_context())
 
         return model_messages
-
-    def _create_model_messages(
-        self,
-        session_messages: list[Message],
-        parsed_command: ParsedCommand | None,
-        include_tools: bool = True,
-    ) -> list[Message]:
-        """Create model messages for the current request.
-
-        For commands, add a temporary system message that defines the final
-        response format. This instruction applies only to the current model
-        call and is not stored in the session history.
-        """
-        command_message = None
-        # Add a temporary command-response format instruction for this model call.
-        response_format_instruction: list[Message] = []
-        if parsed_command is not None:
-            response_format_instruction.append(build_command_response_format_context())
-            command_message = get_command_message_obj(
-                parsed_command.name,
-                command_resolver=self._command_resolver,
-                tool_registry=self._tool_registry,
-                command_loader=self._command_loader,
-            )
-        messages_for_model = session_messages
-        if not include_tools:
-            messages_for_model = [
-                message
-                for message in session_messages
-                if not (
-                    message.role == "system"
-                    and message.content.startswith(TOOLS_CONTEXT_HEADER)
-                )
-            ]
-
-        model_messages = self._model_messages_builder.compose_model_messages(
-            messages_for_model + response_format_instruction
-        )
-        if command_message is not None:
-            model_messages.append(command_message)
-
-        return model_messages
-
-    def _add_response_message(self, session: Session, response: ModelResponse) -> None:
-        """Store a plain final response that is not associated with a command."""
-
-        session.add_message(
-            Message(
-                role="assistant",
-                content=response.text,
-            )
-        )
-
-    def _add_command_summary_message(
-        self,
-        session: Session,
-        parsed_command: ParsedCommand,
-        command_summary: str,
-    ) -> None:
-        """Store the summary of an already validated command response."""
-        session.add_message(
-            Message(
-                role="system",
-                content=(
-                    "Command execution summary: "
-                    f"{parsed_command.name} was executed. Result: "
-                    f"{command_summary}"
-                ),
-            )
-        )
