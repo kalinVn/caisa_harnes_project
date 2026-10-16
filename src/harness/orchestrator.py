@@ -5,10 +5,8 @@ from harness.builder.command_response_format_context_builder import (
     build_command_response_retry_context,
 )
 from harness.domain.loop_state import LoopState
-from harness.builder.tool_call_context_builder import build_tool_calls_context
 from harness.builder.tools_schema_builder import TOOLS_CONTEXT_HEADER
 from harness.parser.command_response_parser import parse_command_response
-from harness.builder.tool_result_context_builder import build_tool_results_context
 from harness.loader.command_context_loader import get_command_message_obj
 from harness.loader.command_loader import (
     CommandLoader,
@@ -26,8 +24,8 @@ from harness.session_manager import (
 from harness.models.request import Request
 from harness.domain.message import Message
 from harness.domain.session import Session
-from harness.domain.tool_call import ToolCall
 from harness.domain.tool_result import ToolResult
+from harness.service.tool_service import ToolService
 from harness.tools.tool_registry import (
     ToolRegistry,
 )
@@ -68,6 +66,11 @@ class Orchestrator:
         self._command_loader = CommandLoader()
         self._tool_registry = ToolRegistry()
         register_tools(self._tool_registry, working_directory=self._project_root)
+        self._tool_service = ToolService(
+            tool_registry=self._tool_registry,
+            model_message_builder=self._model_messages_builder,
+            on_tool_result=self._on_tool_result,
+        )
         self._session_manager = SessionManager(
             project_root=self._project_root,
             tool_registry=self._tool_registry,
@@ -98,7 +101,7 @@ class Orchestrator:
         state.response = self._model_client.generate(state.model_messages)
                     
         session.apply_tool_result_summaries(state.response.tool_result_summaries)
-        requested_tool_result_ids = self._get_requested_tool_result_ids(
+        requested_tool_result_ids = self._tool_service.get_requested_tool_result_ids(
             session,
             state.response,
         )
@@ -111,7 +114,7 @@ class Orchestrator:
 
     def _handle_without_tool_results(self, state, session ,requested_tool_result_ids):
             updated_model_messages = (
-                self._update_model_messages_by_requested_tool_result_ids(
+                self._tool_service.update_model_messages_by_requested_tool_result_ids(
                     state.model_messages,
                     requested_tool_result_ids,
                 )
@@ -159,22 +162,19 @@ class Orchestrator:
 
             return message
         
-        session.add_message(
-            Message(
-                role="assistant",
-                content=build_tool_calls_context(state.response.tool_calls),
-            )
+        tool_call_message = self._tool_service.prepare_tool_call_message(
+            state.response.tool_calls,
+        )
+        session.add_message(tool_call_message)
+
+        tool_results = self._tool_service.execute_tool_calls(
+            state.response.tool_calls,
         )
 
-        tool_results = self._execute_tool_calls(state.response.tool_calls)
-
-        session.add_message(
-            Message(
-                role="user",
-                content=build_tool_results_context(tool_results),
-                tool_results=tuple(tool_results),
-            )
+        tool_result_message = self._tool_service.prepare_tool_result_message(
+            tool_results,
         )
+        session.add_message(tool_result_message)
 
         state.tool_steps += 1
         
@@ -184,47 +184,13 @@ class Orchestrator:
         )
 
         state.model_messages = (
-            self._update_model_messages_by_requested_tool_result_ids(
+            self._tool_service.update_model_messages_by_requested_tool_result_ids(
                 state.model_messages,
                 requested_tool_result_ids,
             )
         )
 
         return self._loop(state, session)
-
-    def _get_requested_tool_result_ids(
-        self,
-        session: Session,
-        response: ModelResponse,
-    ) -> list[str]:
-        """Връща валидните ID-та на поисканите резултати от инструменти."""
-        requested_tool_result_ids: list[str] = []
-
-        for result_id in response.tool_result_output_requests:
-            tool_result = session.get_tool_result_by_id(result_id)
-            if tool_result is not None:
-                requested_tool_result_ids.append(tool_result.id)
-
-        return requested_tool_result_ids
-
-    def _update_model_messages_by_requested_tool_result_ids(
-        self,
-        model_messages: list[Message],
-        requested_tool_result_ids: list[str],
-    ) -> list[Message]:
-        """Връща обновените съобщения."""
-        if not requested_tool_result_ids:
-            return model_messages
-
-        updated_messages = (
-            self._model_messages_builder
-            .update_model_messages_by_tool_result_output_requests_ids(
-                model_messages=model_messages,
-                tool_result_output_requests=requested_tool_result_ids,
-            )
-        )
-
-        return updated_messages
 
     def _handle_response_without_tool_calls(
         self,
@@ -280,37 +246,12 @@ class Orchestrator:
 
         model_messages = self._create_model_messages(
             session.messages,
+            state.parsed_command,
             include_tools=False,
         )
         model_messages.append(build_command_response_retry_context())
 
         return model_messages
-
-    def _execute_tool_calls(
-        self,
-        tool_calls: list[ToolCall],
-    ) -> list[ToolResult]:
-        tool_results: list[ToolResult] = []
-        for tool_call in tool_calls:
-            try:
-                output = self._tool_registry.execute(
-                    tool_call.name,
-                    tool_call.arguments,
-                )
-                tool_result = ToolResult(
-                    name=tool_call.name,
-                    output=output,
-                )
-            except Exception as error:
-                tool_result = ToolResult(
-                    name=tool_call.name,
-                    output=str(error),
-                    success=False,
-                )
-            tool_results.append(tool_result)
-            if self._on_tool_result is not None:
-                self._on_tool_result(tool_result)
-        return tool_results
 
     def _create_model_messages(
         self,
@@ -366,6 +307,7 @@ class Orchestrator:
         )
         if command_message is not None:
             model_messages.append(command_message)
+
         return model_messages
 
     def _add_response_message(self, session: Session, response: ModelResponse) -> None:

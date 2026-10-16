@@ -6,6 +6,7 @@ from harness.domain.message import Message
 from harness.mappers.groq_mapper import map_messages, map_response
 from harness.models.errors import ModelConnectionError, ModelRateLimitError
 from harness.models.response import ModelResponse
+from harness.parser.command_response_parser import parse_command_response
 
 
 class GroqClient:
@@ -74,6 +75,23 @@ class GroqClient:
             try:
                 return map_response(choice.message, tools)
             except ValueError as error:
+                response_text = choice.message.content
+                if (
+                    not command_response_required
+                    and not choice.message.tool_calls
+                    and isinstance(response_text, str)
+                    and response_text.strip()
+                    and not response_text.lstrip().startswith(("{", "[", "```"))
+                ):
+                    return ModelResponse(text=response_text)
+
+                if (
+                    command_response_required
+                    and not choice.message.tool_calls
+                    and parse_command_response(response_text) is not None
+                ):
+                    return ModelResponse(text=response_text)
+
                 if (
                     invalid_response_retries
                     >= self.MAX_INVALID_RESPONSE_RETRIES
