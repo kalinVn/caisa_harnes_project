@@ -11,7 +11,7 @@ class CliMainTest(unittest.TestCase):
         with (
             patch("harness.app.cli.main.load_dotenv"),
             patch("harness.app.cli.main.create_model_client") as create_model_client,
-            patch("harness.app.cli.main.Orchestrator") as runner,
+            patch("harness.app.cli.main.MainOrchestrator") as runner,
             patch(
                 "harness.app.cli.main.read_input",
                 side_effect=["hello", "exit"],
@@ -39,7 +39,7 @@ class CliMainTest(unittest.TestCase):
         with (
             patch("harness.app.cli.main.load_dotenv"),
             patch("harness.app.cli.main.create_model_client"),
-            patch("harness.app.cli.main.Orchestrator") as runner,
+            patch("harness.app.cli.main.MainOrchestrator") as runner,
             patch("harness.app.cli.main.read_input", return_value="quit"),
             patch("sys.stdout", new_callable=io.StringIO),
         ):
@@ -83,7 +83,7 @@ class CliMainTest(unittest.TestCase):
         with (
             patch("harness.app.cli.main.load_dotenv"),
             patch("harness.app.cli.main.create_model_client"),
-            patch("harness.app.cli.main.Orchestrator") as runner,
+            patch("harness.app.cli.main.MainOrchestrator") as runner,
             patch(
                 "harness.app.cli.main.read_input",
                 side_effect=["inspect", "exit"],

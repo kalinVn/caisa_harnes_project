@@ -5,7 +5,7 @@ from harness.parser.command_parser import  ParsedCommand
 
 @dataclass
 class LoopState:
-    """Състояние на изпълнението за една заявка към Orchestrator."""
+    """Състояние на изпълнението за една заявка към MainOrchestrator."""
 
     tool_steps: int = 0
     command_response_retries: int = 0

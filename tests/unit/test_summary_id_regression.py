@@ -2,7 +2,7 @@ import json
 import unittest
 from unittest.mock import Mock, patch
 
-from harness.orchestrator import Orchestrator
+from harness.agents.main_orchestrator import MainOrchestrator
 from harness.builder.command_response_format_context_builder import build_command_response_format_context
 from harness.session_manager import SessionManager
 from harness.models.request import Request
@@ -24,7 +24,7 @@ class SummaryIDRegressionTest(unittest.TestCase):
         client.generate.side_effect = [parse_model_response(json.dumps(payload)),
             parse_model_response(json.dumps(dict(text="Done", tool_calls=[], tool_result_summaries=[])))]
         with patch.object(SessionManager, "_load_system_prompt", return_value="Instructions"):
-            runner = Orchestrator(client)
+            runner = MainOrchestrator(client)
         session = runner._session_manager.current_session
         for result in results:
             session.add_message(Message(role="user", content=result.output, tool_results=(result,)))

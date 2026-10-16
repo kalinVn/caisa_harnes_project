@@ -1,5 +1,6 @@
 from dotenv import load_dotenv
 
+from harness.agents.main_orchestrator import MainOrchestrator
 from harness.app.cli.reader import read_input
 from harness.domain.tool_result import ToolResult
 from harness.factory.model_client_factory import create_model_client
@@ -8,7 +9,6 @@ from harness.models.errors import (
     ModelRateLimitError,
 )
 from harness.models.request import Request
-from harness.orchestrator import Orchestrator
 
 
 def display_tool_result(tool_result: ToolResult) -> None:
@@ -27,7 +27,7 @@ def main() -> None:
     print("Type 'exit' or 'quit' to stop.\n")
 
     model_client = create_model_client()
-    runner = Orchestrator(
+    runner = MainOrchestrator(
         model_client=model_client,
         on_tool_result=display_tool_result,
     )

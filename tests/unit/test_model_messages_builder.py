@@ -15,11 +15,56 @@ from harness.domain.tool_result import ToolResult
 from harness.models.request import Request
 from harness.models.response import ModelResponse
 from harness.models.tool_result_summary import ToolResultSummary
-from harness.orchestrator import Orchestrator
+from harness.agents.main_orchestrator import MainOrchestrator
+from harness.parser.command_parser import ParsedCommand
 from harness.session_manager import SessionManager
 
 
 class ModelMessageBuilderTest(unittest.TestCase):
+    def test_create_model_messages_adds_command_instructions_in_order(self):
+        messages = [
+            Message(role="system", content="Instructions"),
+            Message(role="user", content="execute command review"),
+        ]
+        original = deepcopy(messages)
+        command_context = Message(role="system", content="Command context")
+        command_service = Mock()
+        command_service.prepare_command_context.return_value = command_context
+
+        model_messages = ModelMessageBuilder().create_model_messages(
+            messages,
+            ParsedCommand(name="review", arguments=[]),
+            command_service,
+        )
+
+        command_service.prepare_command_context.assert_called_once_with(
+            ParsedCommand(name="review", arguments=[]),
+        )
+        self.assertEqual(model_messages[:2], messages)
+        self.assertIn("`command_summary`", model_messages[-2].content)
+        self.assertEqual(model_messages[-1], command_context)
+        self.assertEqual(messages, original)
+
+    def test_create_model_messages_filters_tools_when_disabled(self):
+        messages = [
+            Message(role="system", content=f"{TOOLS_CONTEXT_HEADER}\nTools"),
+            Message(role="user", content="Continue"),
+        ]
+        command_service = Mock()
+
+        model_messages = ModelMessageBuilder().create_model_messages(
+            messages,
+            None,
+            command_service,
+            include_tools=False,
+        )
+
+        self.assertEqual(
+            model_messages,
+            [Message(role="user", content="Continue")],
+        )
+        command_service.prepare_command_context.assert_not_called()
+
     def test_tool_results_generate_unique_ids_and_allow_summary_assignment(self):
         first = ToolResult("read_file", "contents")
         second = ToolResult("read_file", "contents")
@@ -232,7 +277,7 @@ class ModelMessageBuilderTest(unittest.TestCase):
                     ModelResponse(text="Next answer"),
                 ]
                 with patch.object(SessionManager, "_load_system_prompt", return_value="Instructions"):
-                    runner = Orchestrator(client)
+                    runner = MainOrchestrator(client)
 
                 raw_output = "large raw output or error details"
                 runner._tool_registry.execute = Mock(return_value=raw_output)
@@ -275,7 +320,7 @@ class ModelMessageBuilderTest(unittest.TestCase):
             ModelResponse(text="Done"),
         ]
         with patch.object(SessionManager, "_load_system_prompt", return_value="Instructions"):
-            runner = Orchestrator(client)
+            runner = MainOrchestrator(client)
         session = runner._session_manager.current_session
         stored_message = Message(
             role="user",
@@ -322,7 +367,7 @@ class ModelMessageBuilderTest(unittest.TestCase):
                 id=f"result-{index}",
             )
             for index in range(
-                Orchestrator.MAX_TOOL_RESULT_OUTPUT_REQUEST_STEPS + 1
+                MainOrchestrator.MAX_TOOL_RESULT_OUTPUT_REQUEST_STEPS + 1
             )
         ]
         client = Mock()
@@ -331,7 +376,7 @@ class ModelMessageBuilderTest(unittest.TestCase):
             for result in previous_results
         ]
         with patch.object(SessionManager, "_load_system_prompt", return_value="Instructions"):
-            runner = Orchestrator(client)
+            runner = MainOrchestrator(client)
         session = runner._session_manager.current_session
         session.add_message(
             Message(
@@ -349,7 +394,7 @@ class ModelMessageBuilderTest(unittest.TestCase):
         )
         self.assertEqual(
             client.generate.call_count,
-            Orchestrator.MAX_TOOL_RESULT_OUTPUT_REQUEST_STEPS + 1,
+            MainOrchestrator.MAX_TOOL_RESULT_OUTPUT_REQUEST_STEPS + 1,
         )
         self.assertEqual(
             session.messages[-1],
@@ -372,7 +417,7 @@ class ModelMessageBuilderTest(unittest.TestCase):
             ModelResponse(text="Done"),
         ]
         with patch.object(SessionManager, "_load_system_prompt", return_value="Instructions"):
-            runner = Orchestrator(client)
+            runner = MainOrchestrator(client)
         session = runner._session_manager.current_session
         session.add_message(
             Message(
@@ -422,7 +467,7 @@ class ModelMessageBuilderTest(unittest.TestCase):
         ]
         listener = Mock()
         with patch.object(SessionManager, "_load_system_prompt", return_value="Instructions"):
-            runner = Orchestrator(client, on_tool_result=listener)
+            runner = MainOrchestrator(client, on_tool_result=listener)
 
         runner._tool_registry.execute = Mock(
             side_effect=["first\nsecond", ValueError("missing file")]
@@ -457,7 +502,7 @@ class ModelMessageBuilderTest(unittest.TestCase):
         ]
         listener = Mock()
         with patch.object(SessionManager, "_load_system_prompt", return_value="Instructions"):
-            runner = Orchestrator(client, on_tool_result=listener)
+            runner = MainOrchestrator(client, on_tool_result=listener)
 
         def execute(_name, arguments):
             if arguments["command"] == "second":
@@ -479,10 +524,13 @@ class ModelMessageBuilderTest(unittest.TestCase):
         command_context = Message(role="system", content="Command instructions")
         listener = Mock()
         with patch.object(SessionManager, "_load_system_prompt", return_value="Instructions"):
-            runner = Orchestrator(client, on_tool_result=listener)
+            runner = MainOrchestrator(client, on_tool_result=listener)
         runner._tool_registry.execute = Mock(return_value="full configuration")
 
-        with patch("harness.orchestrator.get_command_message_obj", return_value=command_context):
+        with patch(
+            "harness.service.command_service.get_command_message_obj",
+            return_value=command_context,
+        ):
             self.assertEqual(runner.handle(Request.create("execute command review")), "Done")
 
         first_messages = client.generate.call_args_list[0].args[0]
@@ -512,9 +560,12 @@ class ModelMessageBuilderTest(unittest.TestCase):
         ]
         command_context = Message(role="system", content="Command instructions")
         with patch.object(SessionManager, "_load_system_prompt", return_value="Instructions"):
-            runner = Orchestrator(client)
+            runner = MainOrchestrator(client)
 
-        with patch("harness.orchestrator.get_command_message_obj", return_value=command_context):
+        with patch(
+            "harness.service.command_service.get_command_message_obj",
+            return_value=command_context,
+        ):
             self.assertEqual(runner.handle(Request.create("execute command review")), "Done")
 
         self.assertEqual(client.generate.call_count, 2)
@@ -553,11 +604,14 @@ class ModelMessageBuilderTest(unittest.TestCase):
         ]
         command_context = Message(role="system", content="Command instructions")
         with patch.object(SessionManager, "_load_system_prompt", return_value="Instructions"):
-            runner = Orchestrator(client)
+            runner = MainOrchestrator(client)
         runner._tool_registry.execute = Mock(return_value="full write output")
 
         with (
-            patch("harness.orchestrator.get_command_message_obj", return_value=command_context),
+            patch(
+                "harness.service.command_service.get_command_message_obj",
+                return_value=command_context,
+            ),
             patch("harness.domain.tool_result.uuid4", return_value="result-id"),
         ):
             result = runner.handle(Request.create("execute command review"))

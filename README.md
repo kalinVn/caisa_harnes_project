@@ -8,7 +8,7 @@ to the model until a final response is produced.
 The project provides:
 
 - a shared `ModelClient` interface for Google Gemini, OpenAI, and Groq;
-- an `Orchestrator` that manages conversation history and tool-call cycles;
+- a `MainOrchestrator` that manages conversation history and tool-call cycles;
 - built-in tools for shell commands and reading or writing project files;
 - reusable Markdown commands stored in `.caisa/commands`;
 - compact summaries of tool results to keep longer sessions manageable;
